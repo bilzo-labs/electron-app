@@ -1,6 +1,11 @@
 require('dotenv').config();
 
 const config = {
+  // POS System Configuration
+  pos: {
+    type: process.env.POS_TYPE || 'HDPOS' // HDPOS, QUICKBILL, or GENERIC
+  },
+
   // SQL Server Configuration
   sqlServer: {
     user: process.env.SQL_USER,
@@ -21,7 +26,8 @@ const config = {
   receiptApi: {
     baseUrl: process.env.RECEIPT_API_URL || 'https://sls.bilzo.in',
     apiKey: process.env.RECEIPT_API_KEY,
-    timeout: 30000
+    timeout: 30000,
+    lastSyncedEndpoint: process.env.LAST_SYNCED_RECEIPT_ENDPOINT || ''
   },
 
   // Validation API Configuration

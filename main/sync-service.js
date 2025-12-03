@@ -12,12 +12,16 @@ class SyncService {
     this.job = null;
     this.isSyncing = false;
     this.lastSyncTime = this.store.get('lastSyncTime', null);
-    this.failedReceipts = this.store.get('failedReceipts', []);
+    this.lastSyncedReceiptDate = this.store.get('lastSyncedReceiptDate', null);
+    this.syncQueue = []; // In-memory queue for receipts to be synced
+    this.failedQueue = []; // In-memory queue for failed receipts (separate from persisted)
     this.syncStats = {
       totalSynced: this.store.get('totalSynced', 0),
       totalFailed: this.store.get('totalFailed', 0),
       lastError: null
     };
+
+    console.log(`Last synced receipt date: ${this.lastSyncedReceiptDate || 'Never'}`);
   }
 
   start() {
@@ -62,14 +66,24 @@ class SyncService {
     try {
       console.log('Starting receipt sync...');
 
-      // Retry failed receipts first
-      if (this.failedReceipts.length > 0) {
+      // Optionally fetch last synced receipt from server
+      await this.fetchLastSyncedFromServer();
+
+      // Retry failed receipts from in-memory queue first
+      if (this.failedQueue.length > 0) {
         await this.retryFailedReceipts();
       }
 
-      // Get recent receipts from SQL Server
-      const receipts = await sqlConnector.getRecentReceipts(config.sync.batchSize);
+      // Get recent receipts from SQL Server (only receipts after lastSyncedReceiptDate)
+      const receipts = await sqlConnector.getRecentReceipts(
+        config.sync.batchSize,
+        this.lastSyncedReceiptDate
+      );
+
       console.log(`Found ${receipts.length} receipts to process`);
+      if (this.lastSyncedReceiptDate) {
+        console.log(`Fetching receipts since: ${this.lastSyncedReceiptDate}`);
+      }
 
       if (receipts.length === 0) {
         this.trayManager.updateStatus('idle');
@@ -77,8 +91,11 @@ class SyncService {
         return;
       }
 
-      // Process receipts in batches
-      const results = await this.processReceipts(receipts);
+      // Add receipts to in-memory sync queue
+      this.syncQueue = receipts;
+
+      // Process receipts from queue
+      const results = await this.processReceipts();
 
       // Update statistics
       this.syncStats.totalSynced += results.succeeded;
@@ -89,7 +106,7 @@ class SyncService {
       this.store.set('totalSynced', this.syncStats.totalSynced);
       this.store.set('totalFailed', this.syncStats.totalFailed);
       this.store.set('lastSyncTime', this.lastSyncTime);
-      this.store.set('failedReceipts', this.failedReceipts);
+      this.store.set('lastSyncedReceiptDate', this.lastSyncedReceiptDate);
 
       console.log(`Sync completed - Success: ${results.succeeded}, Failed: ${results.failed}`);
 
@@ -106,21 +123,18 @@ class SyncService {
       this.trayManager.updateTooltip(`Sync error: ${error.message}`);
     } finally {
       this.isSyncing = false;
+      // Clear sync queue after processing
+      this.syncQueue = [];
     }
   }
 
-  async processReceipts(receipts) {
+  async processReceipts() {
     const results = { succeeded: 0, failed: 0 };
 
-    for (const receipt of receipts) {
-      try {
-        // Check if already synced
-        const syncedReceipts = this.store.get('syncedReceipts', []);
-        if (syncedReceipts.includes(receipt.InvoiceId)) {
-          console.log(`Receipt ${receipt.BillNumber} already synced, skipping...`);
-          continue;
-        }
+    while (this.syncQueue.length > 0) {
+      const receipt = this.syncQueue.shift(); // Take from front of queue
 
+      try {
         // Get full receipt details
         const receiptDetails = await sqlConnector.getReceiptDetails(receipt.InvoiceId);
 
@@ -135,20 +149,23 @@ class SyncService {
         // Send to remote API
         await this.sendToReceiptAPI(apiPayload);
 
-        // Mark as synced
-        syncedReceipts.push(receipt.InvoiceId);
-        this.store.set('syncedReceipts', syncedReceipts);
+        // Update last synced receipt date
+        if (receipt.InvoiceDate) {
+          const receiptDate = new Date(receipt.InvoiceDate);
+          if (!this.lastSyncedReceiptDate || receiptDate > new Date(this.lastSyncedReceiptDate)) {
+            this.lastSyncedReceiptDate = receiptDate.toISOString();
+          }
+        }
 
         results.succeeded++;
-        console.log(`✓ Synced receipt: ${receipt.BillNumber}`);
+        console.log(`✓ Synced receipt: ${receipt.BillNumber} (${receipt.InvoiceDate})`);
 
       } catch (error) {
         console.error(`✗ Failed to sync receipt ${receipt.BillNumber}:`, error.message);
 
-        // Add to failed queue
-        this.failedReceipts.push({
-          invoiceId: receipt.InvoiceId,
-          billNumber: receipt.BillNumber,
+        // Add to in-memory failed queue
+        this.failedQueue.push({
+          receipt,
           error: error.message,
           attempts: 1,
           lastAttempt: new Date().toISOString()
@@ -162,28 +179,31 @@ class SyncService {
   }
 
   async retryFailedReceipts() {
-    console.log(`Retrying ${this.failedReceipts.length} failed receipts...`);
+    console.log(`Retrying ${this.failedQueue.length} failed receipts...`);
 
     const stillFailed = [];
 
-    for (const failed of this.failedReceipts) {
+    for (const failed of this.failedQueue) {
       if (failed.attempts >= config.sync.retryAttempts) {
-        console.log(`Max retries reached for ${failed.billNumber}, skipping...`);
+        console.log(`Max retries reached for ${failed.receipt.BillNumber}, skipping...`);
         stillFailed.push(failed);
         continue;
       }
 
       try {
-        const receiptDetails = await sqlConnector.getReceiptDetails(failed.invoiceId);
+        const receiptDetails = await sqlConnector.getReceiptDetails(failed.receipt.InvoiceId);
         const apiPayload = this.transformReceiptData(receiptDetails);
         await this.sendToReceiptAPI(apiPayload);
 
-        // Success - remove from failed queue
-        const syncedReceipts = this.store.get('syncedReceipts', []);
-        syncedReceipts.push(failed.invoiceId);
-        this.store.set('syncedReceipts', syncedReceipts);
+        // Update last synced receipt date
+        if (failed.receipt.InvoiceDate) {
+          const receiptDate = new Date(failed.receipt.InvoiceDate);
+          if (!this.lastSyncedReceiptDate || receiptDate > new Date(this.lastSyncedReceiptDate)) {
+            this.lastSyncedReceiptDate = receiptDate.toISOString();
+          }
+        }
 
-        console.log(`✓ Retry successful for ${failed.billNumber}`);
+        console.log(`✓ Retry successful for ${failed.receipt.BillNumber}`);
 
       } catch (error) {
         // Still failing - increment attempts
@@ -192,11 +212,56 @@ class SyncService {
         failed.error = error.message;
         stillFailed.push(failed);
 
-        console.log(`✗ Retry failed for ${failed.billNumber} (attempt ${failed.attempts})`);
+        console.log(`✗ Retry failed for ${failed.receipt.BillNumber} (attempt ${failed.attempts})`);
       }
     }
 
-    this.failedReceipts = stillFailed;
+    this.failedQueue = stillFailed;
+  }
+
+  /**
+   * Optionally fetch the last synced receipt from the server
+   * This helps synchronize state between multiple clients or after a reinstall
+   */
+  async fetchLastSyncedFromServer() {
+    // Skip if no endpoint configured
+    if (!config.receiptApi.lastSyncedEndpoint) {
+      return;
+    }
+
+    try {
+      console.log('Fetching last synced receipt from server...');
+
+      const endpoint = config.receiptApi.lastSyncedEndpoint
+        .replace('{STORE_ID}', config.store.storeId)
+        .replace('{ORGANIZATION_ID}', config.store.organizationId);
+
+      const response = await axios.get(
+        `${config.receiptApi.baseUrl}${endpoint}`,
+        {
+          headers: {
+            'x-api-key': config.receiptApi.apiKey
+          },
+          timeout: config.receiptApi.timeout
+        }
+      );
+
+      if (response.data && response.data.lastSyncedDate) {
+        const serverLastSyncedDate = new Date(response.data.lastSyncedDate);
+        const localLastSyncedDate = this.lastSyncedReceiptDate
+          ? new Date(this.lastSyncedReceiptDate)
+          : null;
+
+        // Use the more recent date between server and local
+        if (!localLastSyncedDate || serverLastSyncedDate > localLastSyncedDate) {
+          this.lastSyncedReceiptDate = serverLastSyncedDate.toISOString();
+          console.log(`Updated last synced date from server: ${this.lastSyncedReceiptDate}`);
+        }
+      }
+    } catch (error) {
+      console.warn('Could not fetch last synced receipt from server:', error.message);
+      // Continue with local tracking if server fetch fails
+    }
   }
 
   transformReceiptData(receiptDetails) {
@@ -343,8 +408,10 @@ class SyncService {
     return {
       ...this.syncStats,
       lastSyncTime: this.lastSyncTime,
+      lastSyncedReceiptDate: this.lastSyncedReceiptDate,
       isSyncing: this.isSyncing,
-      failedCount: this.failedReceipts.length
+      queueSize: this.syncQueue.length,
+      failedCount: this.failedQueue.length
     };
   }
 

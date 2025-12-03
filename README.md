@@ -198,6 +198,13 @@ cp .env.example .env
 Edit `.env` with your configuration:
 
 ```env
+# POS System Configuration
+# Supported values: HDPOS, QUICKBILL, GENERIC
+# HDPOS: Uses HD POS-specific queries with comprehensive joins
+# QUICKBILL: Uses QuickBill POS-specific queries (queries to be defined)
+# GENERIC: Uses simplified queries for standard SQL structures
+POS_TYPE=HDPOS
+
 # SQL Server Configuration
 SQL_USER=your_sql_username
 SQL_PASSWORD=your_sql_password
@@ -353,6 +360,69 @@ The app connects to two API endpoints:
 2. **Validation API**: Multiple endpoints for customer/coupon/loyalty lookups
 
 ## Configuration
+
+### POS System Type
+
+The application supports multiple POS systems. Configure the `POS_TYPE` in `.env`:
+
+**HDPOS (HD POS Software):**
+```env
+POS_TYPE=HDPOS
+```
+- Uses comprehensive SQL queries optimized for HD POS database schema
+- Includes detailed joins for business locations, loyalty transactions, payment details
+- Supports additional fields like ExpiryDate, Address details, and more
+- Based on proven queries from the node-sql-server-connector implementation
+
+**QUICKBILL (QuickBill POS):**
+```env
+POS_TYPE=QUICKBILL
+```
+- Uses QuickBill POS-specific queries
+- Query implementation in `main/sql-queries-quickbill.js`
+- Currently contains placeholder queries that need to be defined based on QuickBill schema
+- See `main/sql-queries-quickbill.js` for TODO items and implementation guide
+
+**GENERIC (Standard POS):**
+```env
+POS_TYPE=GENERIC
+```
+- Uses simplified SQL queries for standard database structures
+- Basic customer, invoice, and item information
+- Suitable for custom or non-HDPOS/QuickBill implementations
+
+The application automatically selects the correct SQL queries based on this configuration.
+
+### Optimized Sync with Last Receipt Tracking
+
+The app uses an intelligent sync system to avoid syncing the same receipts repeatedly:
+
+**How it works:**
+1. **Local Tracking**: Stores the date of the last successfully synced receipt
+2. **Smart Queries**: Only fetches receipts AFTER the last synced date from SQL Server
+3. **In-Memory Queue**: Uses in-memory queues for processing, not persisting all receipt IDs
+4. **Server Sync** (Optional): Can fetch the last synced date from your API for multi-client sync
+
+**Server Sync Endpoint** (Optional):
+
+Add this to `.env` to enable server-side sync tracking:
+
+```env
+LAST_SYNCED_RECEIPT_ENDPOINT=/api/v1/receipts/last-synced?storeId={STORE_ID}
+```
+
+Your API should return:
+```json
+{
+  "lastSyncedDate": "2024-01-15T10:30:00Z"
+}
+```
+
+Benefits:
+- Prevents duplicate syncs
+- Reduces SQL query load (only new receipts)
+- Works across reinstalls when server endpoint is configured
+- Minimal local storage (only stores last date, not all receipt IDs)
 
 ### Sync Interval
 

@@ -1,10 +1,14 @@
 const sql = require('mssql');
 const { config } = require('../shared/config');
+const HDPOSQueries = require('./sql-queries-hdpos');
+const QuickBillQueries = require('./sql-queries-quickbill');
 
 class SQLConnector {
   constructor() {
     this.pool = null;
     this.isConnected = false;
+    this.posType = config.pos.type;
+    console.log(`SQL Connector initialized for POS Type: ${this.posType}`);
   }
 
   async connect() {
@@ -44,11 +48,30 @@ class SQLConnector {
     }
   }
 
-  async getRecentReceipts(limit = 50) {
+  async getRecentReceipts(limit = 50, sinceDate = null) {
     try {
       const pool = await this.connect();
 
-      // Get receipts from the last sync or last 24 hours
+      // Use HDPOS queries if POS type is HDPOS
+      if (this.posType === 'HDPOS') {
+        console.log('Using HDPOS-specific queries');
+        return await HDPOSQueries.getRecentReceipts(pool, limit, sinceDate);
+      }
+
+      // Use QuickBill queries if POS type is QUICKBILL
+      if (this.posType === 'QUICKBILL') {
+        console.log('Using QuickBill-specific queries');
+        return await QuickBillQueries.getRecentReceipts(pool, limit, sinceDate);
+      }
+
+      // Generic query for other POS systems
+      console.log('Using generic queries');
+
+      // Default to last 24 hours if no sinceDate provided
+      const dateFilter = sinceDate
+        ? `SalesInvoice.Date > @sinceDate`
+        : `SalesInvoice.Date >= DATEADD(hour, -24, GETDATE())`;
+
       const query = `
         SELECT TOP ${limit}
           SalesInvoice.Id as InvoiceId,
@@ -69,11 +92,16 @@ class SQLConnector {
           ON adcont.AddressId = CustomerAddress.AddressId
         LEFT JOIN tbl_DYN_Contacts as Contact WITH (NOLOCK)
           ON Contact.id = adcont.ContactId
-        WHERE SalesInvoice.Date >= DATEADD(hour, -24, GETDATE())
-        ORDER BY SalesInvoice.Date DESC
+        WHERE ${dateFilter}
+        ORDER BY SalesInvoice.Date ASC
       `;
 
-      const result = await pool.request().query(query);
+      const request = pool.request();
+      if (sinceDate) {
+        request.input('sinceDate', sql.DateTime, new Date(sinceDate));
+      }
+
+      const result = await request.query(query);
       return result.recordset;
     } catch (error) {
       console.error('Error fetching recent receipts:', error);
@@ -84,6 +112,21 @@ class SQLConnector {
   async getReceiptDetails(invoiceId) {
     try {
       const pool = await this.connect();
+
+      // Use HDPOS queries if POS type is HDPOS
+      if (this.posType === 'HDPOS') {
+        console.log('Using HDPOS-specific receipt details query');
+        return await HDPOSQueries.getReceiptDetails(pool, invoiceId);
+      }
+
+      // Use QuickBill queries if POS type is QUICKBILL
+      if (this.posType === 'QUICKBILL') {
+        console.log('Using QuickBill-specific receipt details query');
+        return await QuickBillQueries.getReceiptDetails(pool, invoiceId);
+      }
+
+      // Generic queries for other POS systems
+      console.log('Using generic receipt details query');
 
       // Main receipt query (without items)
       const mainQuery = `
