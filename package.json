@@ -1,0 +1,58 @@
+{
+  "name": "receipt-sync-electron-app",
+  "version": "1.0.0",
+  "description": "Windows Taskbar Electron App for Receipt Sync & Customer Validation",
+  "main": "main/index.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "nodemon --exec electron . --watch main",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "package": "electron-builder --dir",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "keywords": [
+    "electron",
+    "receipt",
+    "sync",
+    "loyalty",
+    "validation"
+  ],
+  "author": "Bilzo",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1",
+    "nodemon": "^3.0.2"
+  },
+  "dependencies": {
+    "axios": "^1.6.2",
+    "dotenv": "^16.3.1",
+    "electron-store": "^8.1.0",
+    "lodash": "^4.17.21",
+    "moment": "^2.30.1",
+    "moment-timezone": "^0.5.44",
+    "mssql": "^10.0.1",
+    "node-schedule": "^2.1.1"
+  },
+  "build": {
+    "appId": "com.bilzo.receipt-sync",
+    "productName": "Bilzo Receipt Sync",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Bilzo Receipt Sync"
+    }
+  }
+}

@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
+  <title>Bilzo Validation Portal</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <h1>Bilzo Validation Portal</h1>
+      <div class="sync-status">
+        <span class="status-indicator" id="statusIndicator"></span>
+        <span class="status-text" id="statusText">Checking...</span>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="tab-navigation">
+      <button class="tab-button active" data-tab="customer">Customer Lookup</button>
+      <button class="tab-button" data-tab="coupon">Coupon Validation</button>
+      <button class="tab-button" data-tab="loyalty">Loyalty Points</button>
+      <button class="tab-button" data-tab="sync">Sync Status</button>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="app-content">
+      <!-- Customer Lookup Tab -->
+      <section class="tab-content active" id="customer-tab">
+        <div class="form-group">
+          <label for="customerMobile">Customer Mobile Number</label>
+          <input
+            type="tel"
+            id="customerMobile"
+            placeholder="Enter 10-digit mobile number"
+            maxlength="10"
+            pattern="[0-9]{10}"
+          />
+        </div>
+        <button class="btn btn-primary" id="searchCustomer">Search Customer</button>
+
+        <div class="result-container" id="customerResult" style="display: none;">
+          <h3>Customer Profile</h3>
+          <div class="info-grid">
+            <div class="info-item">
+              <span class="label">Name:</span>
+              <span class="value" id="custName">-</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Mobile:</span>
+              <span class="value" id="custMobile">-</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Loyalty Points:</span>
+              <span class="value highlight" id="custPoints">0</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Total Purchases:</span>
+              <span class="value" id="custPurchases">0</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Coupon Validation Tab -->
+      <section class="tab-content" id="coupon-tab">
+        <div class="form-group">
+          <label for="couponCode">Coupon Code</label>
+          <input
+            type="text"
+            id="couponCode"
+            placeholder="Enter coupon code"
+            style="text-transform: uppercase"
+          />
+        </div>
+        <div class="form-group">
+          <label for="couponMobile">Customer Mobile (Optional)</label>
+          <input
+            type="tel"
+            id="couponMobile"
+            placeholder="Enter mobile number"
+            maxlength="10"
+          />
+        </div>
+        <button class="btn btn-primary" id="validateCoupon">Validate Coupon</button>
+
+        <div class="result-container" id="couponResult" style="display: none;">
+          <h3>Coupon Details</h3>
+          <div class="info-grid">
+            <div class="info-item">
+              <span class="label">Code:</span>
+              <span class="value" id="cpnCode">-</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Status:</span>
+              <span class="value" id="cpnStatus">-</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Discount:</span>
+              <span class="value highlight" id="cpnDiscount">-</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Valid Until:</span>
+              <span class="value" id="cpnExpiry">-</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Loyalty Points Tab -->
+      <section class="tab-content" id="loyalty-tab">
+        <div class="form-group">
+          <label for="loyaltyMobile">Customer Mobile Number</label>
+          <input
+            type="tel"
+            id="loyaltyMobile"
+            placeholder="Enter 10-digit mobile number"
+            maxlength="10"
+          />
+        </div>
+        <button class="btn btn-primary" id="checkLoyalty">Check Loyalty Points</button>
+
+        <div class="result-container" id="loyaltyResult" style="display: none;">
+          <h3>Loyalty Information</h3>
+          <div class="loyalty-display">
+            <div class="points-badge">
+              <span class="points-value" id="loyaltyPoints">0</span>
+              <span class="points-label">Available Points</span>
+            </div>
+            <div class="info-grid">
+              <div class="info-item">
+                <span class="label">Points Earned (Lifetime):</span>
+                <span class="value" id="pointsEarned">0</span>
+              </div>
+              <div class="info-item">
+                <span class="label">Points Redeemed:</span>
+                <span class="value" id="pointsRedeemed">0</span>
+              </div>
+              <div class="info-item">
+                <span class="label">Tier Level:</span>
+                <span class="value" id="tierLevel">-</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Sync Status Tab -->
+      <section class="tab-content" id="sync-tab">
+        <div class="sync-controls">
+          <button class="btn btn-secondary" id="refreshSync">Refresh Stats</button>
+          <button class="btn btn-primary" id="forceSyncNow">Sync Now</button>
+        </div>
+
+        <div class="result-container">
+          <h3>Sync Statistics</h3>
+          <div class="info-grid">
+            <div class="info-item">
+              <span class="label">Status:</span>
+              <span class="value" id="syncStatusText">-</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Last Sync:</span>
+              <span class="value" id="lastSyncTime">Never</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Total Synced:</span>
+              <span class="value highlight" id="totalSynced">0</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Failed:</span>
+              <span class="value error" id="totalFailed">0</span>
+            </div>
+            <div class="info-item">
+              <span class="label">SQL Connection:</span>
+              <span class="value" id="sqlStatus">-</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Error/Success Messages -->
+      <div class="message-container" id="messageContainer"></div>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
