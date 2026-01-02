@@ -150,7 +150,7 @@ if (!gotTheLock) {
     }
   });
 
-  ipcMain.handle('redeem-loyalty-points', async (event, mobile, receiptNo, points) => {
+  ipcMain.handle('handle-loyalty-redemption', async (event, mobile, receiptNo, points) => {
     try {
       const axios = require('axios');
       const response = await axios.post(
