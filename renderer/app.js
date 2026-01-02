@@ -24,13 +24,13 @@ function setupTabNavigation() {
   const tabButtons = document.querySelectorAll('.tab-button');
   const tabContents = document.querySelectorAll('.tab-content');
 
-  tabButtons.forEach(button => {
+  tabButtons.forEach((button) => {
     button.addEventListener('click', () => {
       const tabName = button.dataset.tab;
 
       // Update active states
-      tabButtons.forEach(btn => btn.classList.remove('active'));
-      tabContents.forEach(content => content.classList.remove('active'));
+      tabButtons.forEach((btn) => btn.classList.remove('active'));
+      tabContents.forEach((content) => content.classList.remove('active'));
 
       button.classList.add('active');
       document.getElementById(`${tabName}-tab`).classList.add('active');
@@ -61,6 +61,7 @@ function setupEventListeners() {
 
   // Loyalty points
   document.getElementById('checkLoyalty').addEventListener('click', handleLoyaltyCheck);
+  document.getElementById('loyaltyRedemption').addEventListener('click', handleLoyaltyRedemption);
   document.getElementById('loyaltyMobile').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') handleLoyaltyCheck();
   });
@@ -109,11 +110,10 @@ async function handleCustomerSearch() {
 }
 
 function displayCustomerProfile(data) {
-  document.getElementById('custName').textContent = data.name || '-';
-  document.getElementById('custMobile').textContent = data.mobile || '-';
-  document.getElementById('custPoints').textContent = data.loyaltyPoints || 0;
-  document.getElementById('custPurchases').textContent = data.totalPurchases || 0;
-
+  document.getElementById('custName').textContent = data.fullName || '-';
+  document.getElementById('custMobile').textContent = data.mobileNumber || '-';
+  document.getElementById('custPoints').textContent = data.currentLoyaltyPoints || 0;
+  document.getElementById('custPurchases').textContent = data.totalAmountSpent || 0;
   showElement('customerResult');
 }
 
@@ -186,7 +186,7 @@ async function handleLoyaltyCheck() {
 
     if (result.success) {
       displayLoyaltyInfo(result.data);
-      showMessage('Loyalty information retrieved', 'success');
+      showMessage(result.data.message, 'success');
     } else {
       showMessage(result.error || 'No loyalty information found', 'error');
       hideElement('loyaltyResult');
@@ -200,12 +200,49 @@ async function handleLoyaltyCheck() {
   }
 }
 
-function displayLoyaltyInfo(data) {
-  document.getElementById('loyaltyPoints').textContent = data.availablePoints || 0;
-  document.getElementById('pointsEarned').textContent = data.totalEarned || 0;
-  document.getElementById('pointsRedeemed').textContent = data.totalRedeemed || 0;
-  document.getElementById('tierLevel').textContent = data.tier || 'Bronze';
+async function handleLoyaltyRedemption() {
+  const mobile = document.getElementById('loyaltyMobile').value.trim();
+  const receiptNo = document.getElementById('receiptNo').value.trim();
+  const points = document.getElementById('loyalPoints').value.trim();
 
+  if (!validateMobile(mobile)) {
+    showMessage('Please enter a valid 10-digit mobile number', 'error');
+    return;
+  }
+
+  const button = document.getElementById('loyaltyRedemption');
+  button.classList.add('loading');
+  button.textContent = 'Redeeming...';
+
+  try {
+    const result = await window.electronAPI.loyaltyRedemptions(mobile, receiptNo, points);
+
+    if (result.success) {
+      displayLoyaltyInfo(result.data);
+      showMessage('Loyalty redemption successful', 'success');
+    } else {
+      showMessage(result.error || 'Loyalty redemption failed', 'error');
+      hideElement('loyaltyRedemption');
+    }
+  } catch (error) {
+    showMessage('Error redeeming loyalty points', 'error');
+    console.error(error);
+  } finally {
+    button.classList.remove('loading');
+    button.textContent = 'Redeem Points';
+    hideElement('loyaltyRedeem');
+    hideElement('loyaltyResult');
+    // Clear input fields by value property
+    document.getElementById('loyaltyMobile').value = '';
+    document.getElementById('billAmount').value = '';
+    document.getElementById('receiptNo').value = '';
+    document.getElementById('loyalPoints').value = '';
+  }
+}
+
+function displayLoyaltyInfo(data) {
+  document.getElementById('loyaltyPoints').textContent = data.redeemablePoints || 0;
+  showElement('loyaltyRedeem');
   showElement('loyaltyResult');
 }
 
@@ -241,9 +278,7 @@ async function updateSyncStatus() {
 }
 
 function displaySyncStats(stats) {
-  document.getElementById('syncStatusText').textContent = stats.isSyncing
-    ? 'Syncing...'
-    : 'Idle';
+  document.getElementById('syncStatusText').textContent = stats.isSyncing ? 'Syncing...' : 'Idle';
   document.getElementById('lastSyncTime').textContent = stats.lastSyncTime
     ? new Date(stats.lastSyncTime).toLocaleString()
     : 'Never';
