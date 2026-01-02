@@ -68,7 +68,6 @@ if (!gotTheLock) {
       }
 
       console.log('Application ready');
-
     } catch (error) {
       console.error('Startup error:', error);
       trayManager.updateStatus('error');
@@ -129,15 +128,37 @@ if (!gotTheLock) {
     }
   });
 
-  ipcMain.handle('get-loyalty-points', async (event, mobile) => {
+  ipcMain.handle('validate-loyalty-points', async (event, mobile, totalAmount) => {
     try {
       const axios = require('axios');
-      const response = await axios.get(
-        `${config.validationApi.baseUrl}/api/v1/loyalty/points`,
+      const response = await axios.post(
+        `${config.validationApi.baseUrl}/api/Loyalty/common-validate`,
+        { mobileNumber: mobile, totalAmount },
         {
-          params: { mobile },
           headers: {
-            'x-api-key': config.validationApi.apiKey
+            'blz-api-key': config.validationApi.apiKey
+          },
+          timeout: config.validationApi.timeout
+        }
+      );
+      return { success: true, data: response.data };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.message || error.message
+      };
+    }
+  });
+
+  ipcMain.handle('redeem-loyalty-points', async (event, mobile, receiptNo, points) => {
+    try {
+      const axios = require('axios');
+      const response = await axios.post(
+        `${config.validationApi.baseUrl}/api/Loyalty/common-redeem`,
+        { mobileNumber: mobile, receiptNo, points },
+        {
+          headers: {
+            'blz-api-key': config.validationApi.apiKey
           },
           timeout: config.validationApi.timeout
         }
@@ -154,21 +175,18 @@ if (!gotTheLock) {
   ipcMain.handle('get-customer-profile', async (event, mobile) => {
     try {
       const axios = require('axios');
-      const response = await axios.get(
-        `${config.validationApi.baseUrl}/api/v1/customers/profile`,
-        {
-          params: { mobile },
-          headers: {
-            'x-api-key': config.validationApi.apiKey
-          },
-          timeout: config.validationApi.timeout
-        }
-      );
+      const response = await axios.get(`${config.validationApi.baseUrl}/api/User/getUserProfile`, {
+        params: { mobileNumber: mobile },
+        headers: {
+          'blz-api-key': config.validationApi.apiKey
+        },
+        timeout: config.validationApi.timeout
+      });
       return { success: true, data: response.data };
     } catch (error) {
       return {
         success: false,
-        error: error.response?.data?.message || error.message
+        error: error.response?.data || error.message
       };
     }
   });
