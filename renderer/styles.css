@@ -21,13 +21,13 @@ body {
 
 /* Header */
 .app-header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #059669;
   color: white;
   padding: 15px 20px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .app-header h1 {
@@ -59,8 +59,13 @@ body {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 /* Tab Navigation */
@@ -90,8 +95,8 @@ body {
 }
 
 .tab-button.active {
-  color: #667eea;
-  border-bottom-color: #667eea;
+  color: #059669;
+  border-bottom-color: #059669;
 }
 
 /* Content */
@@ -151,12 +156,12 @@ body {
 }
 
 .btn-primary {
-  background-color: #667eea;
+  background-color: #059669;
   color: white;
 }
 
 .btn-primary:hover {
-  background-color: #5568d3;
+  background-color: #059669;
   transform: translateY(-1px);
   box-shadow: 0 4px 6px rgba(102, 126, 234, 0.3);
 }
@@ -231,12 +236,17 @@ body {
   text-align: center;
 }
 
+.redemption-container h3 {
+  font-size: 16px;
+  margin: 15px 0;
+  color: #111827;
+}
+
 .points-badge {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #059669;
   color: white;
-  padding: 30px;
+  padding: 5px;
   border-radius: 12px;
-  margin-bottom: 20px;
   box-shadow: 0 4px 6px rgba(102, 126, 234, 0.2);
 }
 
@@ -333,7 +343,9 @@ body {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Scrollbar */
