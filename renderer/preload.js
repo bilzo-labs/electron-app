@@ -12,7 +12,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkSqlHealth: () => ipcRenderer.invoke('check-sql-health'),
 
   // Validation operations
-  validateCoupon: (couponCode, mobile) => ipcRenderer.invoke('validate-coupon', couponCode, mobile),
+  validateCoupon: (couponCode, mobile, purchaseAmount) =>
+    ipcRenderer.invoke('validate-coupon', couponCode, mobile, purchaseAmount),
+
+  sendOtpCoupon: (couponCode, mobile) => ipcRenderer.invoke('sendOtp-coupon', couponCode, mobile),
+
+  validateOtpCoupon: (couponCode, mobile, otp, referenceNumber) =>
+    ipcRenderer.invoke('validateOtp-coupon', couponCode, mobile, otp, referenceNumber),
+
+  redeemCoupon: (couponCode, mobile, purchaseAmount, receiptNo) =>
+    ipcRenderer.invoke('redeem-coupon', couponCode, mobile, purchaseAmount, receiptNo),
 
   getLoyaltyPoints: (mobile) => ipcRenderer.invoke('validate-loyalty-points', mobile),
 
