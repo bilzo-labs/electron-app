@@ -1,5 +1,6 @@
 // App state
 let currentTab = 'customer';
+let storedReferenceNumber = null; // Store referenceNumber from sendOtp-coupon response
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', async () => {
@@ -55,6 +56,9 @@ function setupEventListeners() {
 
   // Coupon validation
   document.getElementById('validateCoupon').addEventListener('click', handleCouponValidation);
+  document.getElementById('sendOtpCoupon').addEventListener('click', handleSendOtpCoupon);
+  document.getElementById('validateCouponOtp').addEventListener('click', handleValidateCouponOtp);
+  document.getElementById('redeemCouponBtn').addEventListener('click', handleRedeemCoupon);
   document.getElementById('couponCode').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') handleCouponValidation();
   });
@@ -121,6 +125,7 @@ function displayCustomerProfile(data) {
 async function handleCouponValidation() {
   const couponCode = document.getElementById('couponCode').value.trim().toUpperCase();
   const mobile = document.getElementById('couponMobile').value.trim();
+  const purchaseAmount = document.getElementById('purchaseAmount').value.trim();
 
   if (!couponCode) {
     showMessage('Please enter a coupon code', 'error');
@@ -132,19 +137,27 @@ async function handleCouponValidation() {
     return;
   }
 
+  if (!purchaseAmount) {
+    showMessage('Please enter a purchase amount', 'error');
+    return;
+  }
+
   const button = document.getElementById('validateCoupon');
   button.classList.add('loading');
   button.textContent = 'Validating...';
 
   try {
-    const result = await window.electronAPI.validateCoupon(couponCode, mobile || null);
-
+    const result = await window.electronAPI.validateCoupon(couponCode, mobile || null, purchaseAmount);
     if (result.success) {
-      displayCouponDetails(result.data);
-      showMessage('Coupon is valid!', 'success');
+      if (result.data.requireOtpValidation) {
+        showOTPContainer();
+      } else {
+        displayRedeemButton();
+      }
+      showMessage(result.data.message, 'success');
     } else {
       showMessage(result.error || 'Invalid coupon', 'error');
-      hideElement('couponResult');
+      hideElement('redeemCouponBtn');
     }
   } catch (error) {
     showMessage('Error validating coupon', 'error');
@@ -155,19 +168,147 @@ async function handleCouponValidation() {
   }
 }
 
-function displayCouponDetails(data) {
-  document.getElementById('cpnCode').textContent = data.code || '-';
-  document.getElementById('cpnStatus').textContent = data.status || '-';
-  document.getElementById('cpnDiscount').textContent = data.discount
-    ? `${data.discountType === 'percentage' ? data.discount + '%' : '₹' + data.discount}`
-    : '-';
-  document.getElementById('cpnExpiry').textContent = data.expiryDate
-    ? new Date(data.expiryDate).toLocaleDateString()
-    : '-';
+async function handleSendOtpCoupon() {
+  const couponCode = document.getElementById('couponCode').value.trim().toUpperCase();
+  const mobile = document.getElementById('couponMobile').value.trim();
 
-  showElement('couponResult');
+  if (!couponCode) {
+    showMessage('Please enter a coupon code', 'error');
+    return;
+  }
+
+  if (mobile && !validateMobile(mobile)) {
+    showMessage('Please enter a valid 10-digit mobile number', 'error');
+    return;
+  }
+
+  const button = document.getElementById('sendOtpCoupon');
+  button.classList.add('loading');
+  button.textContent = 'Sending OTP...';
+
+  try {
+    const result = await window.electronAPI.sendOtpCoupon(couponCode, mobile || null);
+    if (result.success) {
+      // Store the referenceNumber from the response
+      storedReferenceNumber = result.data.referenceNumber || null;
+      showMessage(result.data.message, 'success');
+      showValidateOtpContainer();
+    } else {
+      showMessage(result.error || 'Failed to send OTP', 'error');
+      hideElement('sendOtpCoupon');
+      storedReferenceNumber = null; // Clear stored reference number on error
+    }
+  } catch (error) {
+    showMessage('Error sending OTP', 'error');
+    console.error(error);
+    storedReferenceNumber = null; // Clear stored reference number on error
+  } finally {
+    button.classList.remove('loading');
+    button.textContent = 'Send OTP';
+  }
 }
 
+function displayRedeemButton() {
+  showElement('redeemCouponGroup');
+}
+
+function showOTPContainer() {
+  showElement('sendOtpCoupon');
+}
+
+function showValidateOtpContainer() {
+  showElement('otpValidationGroup');
+}
+
+async function handleValidateCouponOtp() {
+  const couponCode = document.getElementById('couponCode').value.trim().toUpperCase();
+  const mobile = document.getElementById('couponMobile').value.trim();
+  const otp = document.getElementById('couponOtp').value.trim();
+
+  if (!couponCode) {
+    showMessage('Please enter a coupon code', 'error');
+    return;
+  }
+
+  if (!otp) {
+    showMessage('Please enter the OTP', 'error');
+    return;
+  }
+
+  if (!storedReferenceNumber) {
+    showMessage('Reference number not found. Please send OTP again', 'error');
+    return;
+  }
+
+  const button = document.getElementById('validateCouponOtp');
+  button.classList.add('loading');
+  button.textContent = 'Validating OTP...';
+
+  try {
+    const result = await window.electronAPI.validateOtpCoupon(couponCode, mobile || null, otp, storedReferenceNumber);
+    if (result.success) {
+      showMessage(result.data.message || 'OTP validated successfully', 'success');
+      displayRedeemButton();
+      document.getElementById('couponOtp').value = '';
+      hideElement('otpValidationGroup');
+      hideElement('sendOtpCoupon');
+    } else {
+      showMessage(result.error || 'OTP validation failed', 'error');
+      hideElement('otpValidationGroup');
+      hideElement('sendOtpCoupon');
+    }
+  } catch (error) {
+    showMessage('Error validating OTP', 'error');
+    console.error(error);
+  } finally {
+    button.classList.remove('loading');
+    button.textContent = 'Validate OTP';
+  }
+}
+
+async function handleRedeemCoupon() {
+  const couponCode = document.getElementById('couponCode').value.trim().toUpperCase();
+  const mobile = document.getElementById('couponMobile').value.trim();
+  const purchaseAmount = document.getElementById('purchaseAmount').value.trim();
+  const receiptNo = document.getElementById('receiptNo').value.trim();
+
+  if (!couponCode) {
+    showMessage('Please enter a coupon code', 'error');
+    return;
+  }
+  if (!mobile) {
+    showMessage('Please enter a mobile number', 'error');
+    return;
+  }
+  if (!purchaseAmount) {
+    showMessage('Please enter a purchase amount', 'error');
+    return;
+  }
+
+  const button = document.getElementById('redeemCouponBtn');
+  button.classList.add('loading');
+  button.textContent = 'Redeeming...';
+
+  try {
+    const result = await window.electronAPI.redeemCoupon(couponCode, mobile, purchaseAmount, receiptNo);
+    if (result.success) {
+      showMessage(result.data.message || 'Coupon redeemed successfully', 'success');
+    } else {
+      showMessage(result.error || 'Failed to redeem coupon', 'error');
+    }
+    document.getElementById('couponCode').value = '';
+    document.getElementById('couponMobile').value = '';
+    document.getElementById('purchaseAmount').value = '';
+    document.getElementById('receiptNo').value = '';
+    hideElement('redeemCouponGroup');
+  } catch (error) {
+    showMessage('Error redeeming coupon', 'error');
+    console.error(error);
+  } finally {
+    button.classList.remove('loading');
+    button.textContent = 'Redeem Coupon';
+  }
+}
 // Loyalty Check
 async function handleLoyaltyCheck() {
   const mobile = document.getElementById('loyaltyMobile').value.trim();
