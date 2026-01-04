@@ -75,31 +75,38 @@
             <input type="text" id="couponCode" placeholder="Enter coupon code" style="text-transform: uppercase" />
           </div>
           <div class="form-group">
-            <label for="couponMobile">Customer Mobile (Optional)</label>
+            <label for="couponMobile">Customer Mobile</label>
             <input type="tel" id="couponMobile" placeholder="Enter mobile number" maxlength="10" />
+          </div>
+          <div class="form-group">
+            <label for="purchaseAmount">Purchase Amount</label>
+            <input type="number" id="purchaseAmount" placeholder="Enter purchase amount" />
           </div>
           <button class="btn btn-primary" id="validateCoupon">Validate Coupon</button>
 
           <div class="result-container" id="couponResult" style="display: none">
-            <h3>Coupon Details</h3>
-            <div class="info-grid">
-              <div class="info-item">
-                <span class="label">Code:</span>
-                <span class="value" id="cpnCode">-</span>
-              </div>
-              <div class="info-item">
-                <span class="label">Status:</span>
-                <span class="value" id="cpnStatus">-</span>
-              </div>
-              <div class="info-item">
-                <span class="label">Discount:</span>
-                <span class="value highlight" id="cpnDiscount">-</span>
-              </div>
-              <div class="info-item">
-                <span class="label">Valid Until:</span>
-                <span class="value" id="cpnExpiry">-</span>
-              </div>
+            <!-- Results populated by JS -->
+          </div>
+
+          <!-- Button to send OTP, hidden by default -->
+          <button class="btn btn-secondary" id="sendOtpCoupon" style="display: none; margin-top: 10px;">Send OTP</button>
+
+          <!-- Coupon Redemption Section -->
+          <div class="coupon-redemption-container" id="couponRedemptionContainer" style="margin-top: 20px;">
+            <!-- OTP validation placeholder and button, both hidden initially -->
+            <div class="form-group" id="otpValidationGroup" style="display: none;">
+              <label for="couponOtp">Enter OTP</label>
+              <input type="text" id="couponOtp" placeholder="Enter OTP" maxlength="6" autocomplete="one-time-code" />
+              <button class="btn btn-primary" id="validateCouponOtp" style="margin-top: 20px;">Validate OTP</button>
             </div>
+            <!-- Redeem Coupon Button -->
+             <div style="display: none;" id="redeemCouponGroup">
+              <div class="form-group">
+                <label for="receiptNo">Enter Receipt No</label>
+                <input type="text" id="receiptNo" placeholder="Enter Receipt No"  />
+              </div>
+              <button class="btn btn-primary" id="redeemCouponBtn">Redeem Coupon</button>
+             </div>
           </div>
         </section>
 
