@@ -23,6 +23,7 @@ class WindowManager {
       height: windowHeight,
       minWidth: config.window.minWidth,
       minHeight: config.window.minHeight,
+      icon: path.join(__dirname, '../assets/logo-home.ico'),
       x,
       y,
       show: false,

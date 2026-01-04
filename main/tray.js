@@ -10,8 +10,8 @@ class TrayManager {
 
   create() {
     // Create tray icon (you'll need to add actual icon files)
-    const iconPath = this.getIconPath('idle');
-    const icon = nativeImage.createFromPath(iconPath);
+    // const iconPath = this.getIconPath('idle');
+    const icon = nativeImage.createFromPath(path.join(__dirname, '../assets/logo-home.ico'));
 
     this.tray = new Tray(icon.resize({ width: 16, height: 16 }));
     this.tray.setToolTip('Bilzo Receipt Sync - Idle');
@@ -80,16 +80,17 @@ class TrayManager {
     this.status = status;
 
     // Update icon based on status
-    const iconPath = this.getIconPath(status);
-    const icon = nativeImage.createFromPath(iconPath);
-    this.tray.setImage(icon.resize({ width: 16, height: 16 }));
+    // const iconPath = this.getIconPath(status);
+    // const icon = nativeImage.createFromPath(iconPath);
+    // this.tray.setImage(icon.resize({ width: 16, height: 16 }));
 
     // Update tooltip
-    const statusText = {
-      idle: 'Idle',
-      syncing: 'Syncing...',
-      error: 'Error'
-    }[status] || 'Unknown';
+    const statusText =
+      {
+        idle: 'Idle',
+        syncing: 'Syncing...',
+        error: 'Error'
+      }[status] || 'Unknown';
 
     this.tray.setToolTip(`Bilzo Receipt Sync - ${statusText}`);
   }
@@ -101,11 +102,12 @@ class TrayManager {
   getIconPath(status) {
     // Use different icons for different statuses
     // For now, we'll create simple colored icons programmatically
-    const iconName = {
-      idle: 'icon-idle.png',
-      syncing: 'icon-syncing.png',
-      error: 'icon-error.png'
-    }[status] || 'icon-idle.png';
+    const iconName =
+      {
+        idle: 'icon-idle.png',
+        syncing: 'icon-syncing.png',
+        error: 'icon-error.png'
+      }[status] || 'icon-idle.png';
 
     return path.join(__dirname, '../assets', iconName);
   }
