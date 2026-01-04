@@ -105,16 +105,90 @@ if (!gotTheLock) {
     };
   });
 
-  ipcMain.handle('validate-coupon', async (event, couponCode, mobile) => {
+  ipcMain.handle('validate-coupon', async (event, couponCode, mobileNumber, purchaseAmount) => {
     try {
       const axios = require('axios');
       const response = await axios.post(
-        `${config.validationApi.baseUrl}/api/v1/coupons/validate`,
-        { couponCode, mobile },
+        `${config.validationApi.baseUrl}/api/Coupons/validate`,
+        { couponCode, mobileNumber, purchaseAmount },
         {
           headers: {
             'Content-Type': 'application/json',
-            'x-api-key': config.validationApi.apiKey
+            'blz-api-key': config.validationApi.apiKey
+          },
+          timeout: config.validationApi.timeout
+        }
+      );
+      return { success: true, data: response.data };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.message || error.message
+      };
+    }
+  });
+
+  ipcMain.handle('sendOtp-coupon', async (event, couponCode, mobileNumber) => {
+    try {
+      const axios = require('axios');
+      const response = await axios.post(
+        `${config.validationApi.baseUrl}/api/Coupons/sendOtp`,
+        { couponCode, mobileNumber },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'blz-api-key': config.validationApi.apiKey
+          },
+          timeout: config.validationApi.timeout
+        }
+      );
+      return { success: true, data: response.data };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.message || error.message
+      };
+    }
+  });
+
+  ipcMain.handle('validateOtp-coupon', async (event, couponCode, mobileNumber, otp, referenceNumber) => {
+    try {
+      const axios = require('axios');
+      const response = await axios.post(
+        `${config.validationApi.baseUrl}/api/Coupons/validateOtp`,
+        { couponCode, mobileNumber, otp, referenceNumber },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'blz-api-key': config.validationApi.apiKey
+          },
+          timeout: config.validationApi.timeout
+        }
+      );
+      return { success: true, data: response.data };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.message || error.message
+      };
+    }
+  });
+
+  ipcMain.handle('redeem-coupon', async (event, couponCode, mobileNumber, purchaseAmount, receiptNo) => {
+    try {
+      const axios = require('axios');
+      const response = await axios.post(
+        `${config.validationApi.baseUrl}/api/Coupons/common-redeem`,
+        {
+          couponCode,
+          mobileNumber,
+          purchaseAmount,
+          receiptNo
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'blz-api-key': config.validationApi.apiKey
           },
           timeout: config.validationApi.timeout
         }
