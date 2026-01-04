@@ -144,6 +144,17 @@ class QuickBillQueries {
     console.warn(`QuickBill receipt details not available for invoice ${invoiceId}`);
     return null;
   }
+
+  static async getReceiptDetail(pool, invoiceId) {
+   const receiptDetailQuery = `select voucherno, vchnetamount, voucherDate, qbledger.LedgerName, qbmailingaddres.MobileNo, qbvoucherheader.QBGUID from QbVoucherHeader as qbvoucherheader 
+    join QbLedger as qbledger on qbledger.QBGUID = qbvoucherheader.PartyGUID 
+    join QbMaillingAddress as qbmailingaddres on qbledger.QBGUID = qbmailingaddres.LinkGUID;`
+    
+  }
+
+  static async getItemDetails(pool, invoiceId) {
+const itemQuery = `select qbitemmaster.ItemDescription, qbvoucheritems.NoOfCount, qbvoucheritems.SerialNo, qbvoucheritems.itemRate as unitPrice, qbvoucheritems.itemBaseValue as valueWithoutGst, qbvoucheritems.ItemNetAmount as netAmount, qbvoucheritems.ItemLvlDiscAmt as discountAmount   from  QbVoucherItems as qbvoucheritems join QbItemMaster as qbitemmaster on qbvoucheritems.ItemGUID = qbitemmaster.QBGUID where VchHdrGUID = '${invoiceId}';`;
+  }
 }
 
 module.exports = QuickBillQueries;
