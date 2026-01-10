@@ -1,16 +1,26 @@
-const { app, ipcMain } = require('electron');
+const { app, ipcMain, dialog } = require('electron');
 const path = require('path');
-const { config, validateConfig } = require('../shared/config');
+const {
+  config,
+  validateConfig,
+  exportConfigToFile,
+  reloadConfigFromFile,
+  getConfigFilePath
+} = require('../shared/config');
+const getLogger = require('../shared/logger');
 const WindowManager = require('./window-manager');
 const TrayManager = require('./tray');
 const SyncService = require('./sync-service');
 const sqlConnector = require('./sql-connector');
 
+// Initialize logger
+const logger = getLogger();
+
 // Prevent multiple instances
 const gotTheLock = app.requestSingleInstanceLock();
 
 if (!gotTheLock) {
-  console.log('Another instance is already running');
+  logger.info('Another instance is already running');
   app.quit();
 } else {
   let windowManager;
@@ -26,11 +36,76 @@ if (!gotTheLock) {
 
   // App ready
   app.whenReady().then(async () => {
-    console.log('Bilzo Receipt Sync - Starting...');
+    logger.info('Bilzo Receipt Sync - Starting...');
+    logger.info(`App version: ${app.getVersion() || '1.0.0'}`);
+    logger.info(`Node version: ${process.version}`);
+    logger.info(`Platform: ${process.platform}`);
+    logger.info(`App is packaged: ${app.isPackaged}`);
+
+    // Set application icon (for taskbar, window title bar, etc.)
+    try {
+      const iconPath = path.join(__dirname, '../assets/logo-home.ico');
+      if (require('fs').existsSync(iconPath)) {
+        const { nativeImage } = require('electron');
+        const icon = nativeImage.createFromPath(iconPath);
+        if (!icon.isEmpty()) {
+          app.dock?.setIcon(iconPath); // macOS dock icon
+          logger.info('Application icon set');
+        }
+      }
+    } catch (error) {
+      logger.warn('Could not set application icon:', error.message);
+    }
+
+    // In production, reload config from file first (in case user edited it)
+    // Then only export if file doesn't exist or is incomplete
+    if (app.isPackaged) {
+      logger.info('Loading configuration from app data directory...');
+
+      // First, reload config from file to update process.env
+      const reloaded = reloadConfigFromFile();
+      if (reloaded) {
+        logger.info('Configuration reloaded from file');
+      }
+
+      // Only export if config file doesn't exist or is incomplete
+      logger.info('Checking if configuration file needs to be created...');
+      const exported = exportConfigToFile(false); // false = don't force, preserve existing
+      if (exported) {
+        const configPath = getConfigFilePath();
+        logger.info(`Configuration file created at: ${configPath}`);
+        // Reload again after creating file to ensure process.env is updated
+        reloadConfigFromFile();
+      } else {
+        const configPath = getConfigFilePath();
+        logger.info(`Using existing configuration file: ${configPath}`);
+        // Log some config values to verify they're loaded (without sensitive data)
+        logger.info(
+          `Config loaded - POS Type: ${config.pos.type}, SQL Server: ${config.sqlServer.server}, Database: ${config.sqlServer.database}`
+        );
+      }
+    }
 
     // Validate configuration
     if (!validateConfig()) {
-      console.error('Invalid configuration. Please check your .env file');
+      const configPath = app.isPackaged ? getConfigFilePath() : '.env';
+      logger.error('Invalid configuration. Please check your configuration file');
+      logger.error(`Config file location: ${configPath}`);
+
+      // Show error dialog
+      dialog.showErrorBox(
+        'Configuration Error',
+        `Invalid configuration detected.\n\n` +
+          `Please check your configuration file:\n${configPath}\n\n` +
+          `Required variables:\n` +
+          `- SQL_USER\n` +
+          `- SQL_PASSWORD\n` +
+          `- SQL_SERVER\n` +
+          `- SQL_DATABASE\n` +
+          `- RECEIPT_API_KEY\n\n` +
+          `Logs are available at: ${logger.getLogDir()}`
+      );
+
       app.quit();
       return;
     }
@@ -51,9 +126,9 @@ if (!gotTheLock) {
       trayManager.updateContextMenu(syncService);
 
       // Test SQL connection
-      console.log('Testing SQL Server connection...');
+      logger.info('Testing SQL Server connection...');
       await sqlConnector.connect();
-      console.log('SQL Server connection successful');
+      logger.info('SQL Server connection successful');
 
       // Start sync service
       syncService.start();
@@ -64,14 +139,23 @@ if (!gotTheLock) {
           openAtLogin: true,
           path: app.getPath('exe')
         });
-        console.log('Auto-start on boot enabled');
+        logger.info('Auto-start on boot enabled');
       }
 
-      console.log('Application ready');
+      logger.info('Application ready');
     } catch (error) {
-      console.error('Startup error:', error);
-      trayManager.updateStatus('error');
-      trayManager.updateTooltip(`Startup error: ${error.message}`);
+      logger.error('Startup error:', error);
+
+      // Show error dialog
+      dialog.showErrorBox(
+        'Startup Error',
+        `Failed to start application:\n\n${error.message}\n\n` + `Check logs at: ${logger.getLogDir()}`
+      );
+
+      if (trayManager) {
+        trayManager.updateStatus('error');
+        trayManager.updateTooltip(`Startup error: ${error.message}`);
+      }
     }
   });
 
@@ -81,6 +165,17 @@ if (!gotTheLock) {
       apiUrl: config.validationApi.baseUrl,
       debug: config.app.debug
     };
+  });
+
+  ipcMain.handle('get-log-path', () => {
+    return {
+      logDir: logger.getLogDir(),
+      logFile: logger.getLogPath()
+    };
+  });
+
+  ipcMain.handle('get-recent-logs', (event, lines = 100) => {
+    return logger.getRecentLogs(lines);
   });
 
   ipcMain.handle('get-sync-stats', () => {
@@ -294,10 +389,18 @@ if (!gotTheLock) {
 
   // Handle uncaught exceptions
   process.on('uncaughtException', (error) => {
-    console.error('Uncaught Exception:', error);
+    logger.error('Uncaught Exception:', error);
+
+    // Show error dialog for critical errors
+    if (app.isReady()) {
+      dialog.showErrorBox(
+        'Application Error',
+        `An unexpected error occurred:\n\n${error.message}\n\n` + `Check logs at: ${logger.getLogDir()}`
+      );
+    }
   });
 
   process.on('unhandledRejection', (error) => {
-    console.error('Unhandled Rejection:', error);
+    logger.error('Unhandled Rejection:', error);
   });
 }

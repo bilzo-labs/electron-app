@@ -1,6 +1,9 @@
 const { BrowserWindow, screen } = require('electron');
 const path = require('path');
 const { config } = require('../shared/config');
+const getLogger = require('../shared/logger');
+
+const logger = getLogger();
 
 class WindowManager {
   constructor() {
@@ -18,12 +21,15 @@ class WindowManager {
     const x = screenWidth - windowWidth - 20;
     const y = screenHeight - windowHeight - 20;
 
+    // Set window icon
+    const iconPath = path.join(__dirname, '../assets/logo-home.ico');
+
     this.window = new BrowserWindow({
       width: windowWidth,
       height: windowHeight,
       minWidth: config.window.minWidth,
       minHeight: config.window.minHeight,
-      icon: path.join(__dirname, '../assets/logo-home.ico'),
+      icon: iconPath, // Window icon (taskbar, title bar)
       x,
       y,
       show: false,
@@ -56,7 +62,7 @@ class WindowManager {
       this.window.webContents.openDevTools({ mode: 'detach' });
     }
 
-    console.log('Main window created');
+    logger.info('Main window created');
   }
 
   show() {

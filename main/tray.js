@@ -1,5 +1,8 @@
 const { app, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
+const getLogger = require('../shared/logger');
+
+const logger = getLogger();
 
 class TrayManager {
   constructor(windowManager) {
@@ -9,11 +12,36 @@ class TrayManager {
   }
 
   create() {
-    // Create tray icon (you'll need to add actual icon files)
-    // const iconPath = this.getIconPath('idle');
-    const icon = nativeImage.createFromPath(path.join(__dirname, '../assets/logo-home.ico'));
+    // Create tray icon using the application logo
+    const iconPath = path.join(__dirname, '../assets/logo-home.ico');
+    let icon;
 
-    this.tray = new Tray(icon.resize({ width: 16, height: 16 }));
+    try {
+      icon = nativeImage.createFromPath(iconPath);
+      if (icon.isEmpty()) {
+        logger.warn('Tray icon file not found or invalid:', iconPath);
+        throw new Error('Icon file is empty');
+      }
+    } catch (error) {
+      logger.error('Failed to load tray icon:', error.message);
+      // Create a simple fallback icon
+      const fs = require('fs');
+      if (fs.existsSync(iconPath)) {
+        // Try again with a different approach
+        icon = nativeImage.createFromPath(iconPath);
+      }
+      if (!icon || icon.isEmpty()) {
+        logger.warn('Using default tray icon');
+        // Use a simple colored image as fallback
+        icon = nativeImage.createFromDataURL(
+          'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+        );
+      }
+    }
+
+    // Resize icon for tray (Windows typically uses 16x16)
+    const trayIcon = icon.resize({ width: 16, height: 16 });
+    this.tray = new Tray(trayIcon);
     this.tray.setToolTip('Bilzo Receipt Sync - Idle');
 
     // Build context menu
@@ -24,7 +52,7 @@ class TrayManager {
       this.windowManager.toggle();
     });
 
-    console.log('System tray created');
+    logger.info('System tray created');
   }
 
   updateContextMenu(syncService = null) {
@@ -61,7 +89,7 @@ class TrayManager {
         label: 'Settings',
         click: () => {
           // TODO: Open settings window
-          console.log('Settings clicked');
+          logger.info('Settings clicked');
         }
       },
       { type: 'separator' },
