@@ -296,9 +296,9 @@ class SyncService {
         });
       });
     }
-    const preDiscountTotal = items.reduce((acc, item) => acc + item.unitPrice, 0);
+    const preDiscountTotal = transformedItems.reduce((acc, item) => acc + item.unitPrice, 0);
     const totalTax = gstDetails.reduce((acc, gst) => acc + gst.gst, 0);
-    const totalQuantity = items.reduce((acc, item) => acc + item.quantity, 0);
+    const totalQuantity = transformedItems.reduce((acc, item) => acc + item.quantity, 0);
     // Build payload
     return {
       receiptDetails: {
@@ -310,7 +310,7 @@ class SyncService {
       items: transformedItems,
       payment: {
         currency: 'INR',
-        totalItem: items.length,
+        totalItem: transformedItems.length,
         preDiscountTotal,
         totalQuantity,
         totalTax: totalTax,
