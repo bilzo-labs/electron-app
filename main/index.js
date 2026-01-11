@@ -193,13 +193,6 @@ if (!gotTheLock) {
     return { success: false, error: 'Sync service not available' };
   });
 
-  ipcMain.handle('check-sql-health', async () => {
-    return {
-      connected: sqlConnector.isHealthy(),
-      timestamp: new Date().toISOString()
-    };
-  });
-
   ipcMain.handle('validate-coupon', async (event, couponCode, mobileNumber, purchaseAmount) => {
     try {
       const axios = require('axios');
