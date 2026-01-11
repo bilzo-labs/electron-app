@@ -4,6 +4,9 @@ const moment = require('moment-timezone');
 const { config } = require('../shared/config');
 const sqlConnector = require('./sql-connector');
 const Store = require('electron-store');
+const getLogger = require('../shared/logger');
+const _ = require('lodash');
+const logger = getLogger();
 
 class SyncService {
   constructor(trayManager) {
@@ -13,24 +16,24 @@ class SyncService {
     this.isSyncing = false;
     this.lastSyncTime = this.store.get('lastSyncTime', null);
     this.lastSyncedReceiptDate = this.store.get('lastSyncedReceiptDate', null);
-    this.syncQueue = []; // In-memory queue for receipts to be synced
-    this.failedQueue = []; // In-memory queue for failed receipts (separate from persisted)
+    this.syncQueue = {}; // In-memory queue for receipts to be synced
+    this.failedQueue = {}; // In-memory queue for failed receipts (separate from persisted)
     this.syncStats = {
       totalSynced: this.store.get('totalSynced', 0),
       totalFailed: this.store.get('totalFailed', 0),
       lastError: null
     };
 
-    console.log(`Last synced receipt date: ${this.lastSyncedReceiptDate || 'Never'}`);
+    logger.info(`Last synced receipt date: ${this.lastSyncedReceiptDate || 'Never'}`);
   }
 
   start() {
     if (!config.sync.enabled) {
-      console.log('Sync service is disabled');
+      logger.info('Sync service is disabled');
       return;
     }
 
-    console.log(`Starting sync service - interval: ${config.sync.intervalMinutes} minutes`);
+    logger.info(`Starting sync service - interval: ${config.sync.intervalMinutes} minutes`);
 
     // Run initial sync after 10 seconds
     setTimeout(() => {
@@ -43,20 +46,20 @@ class SyncService {
       this.runSync();
     });
 
-    console.log('Sync service started');
+    logger.info('Sync service started');
   }
 
   stop() {
     if (this.job) {
       this.job.cancel();
       this.job = null;
-      console.log('Sync service stopped');
+      logger.info('Sync service stopped');
     }
   }
 
   async runSync() {
     if (this.isSyncing) {
-      console.log('Sync already in progress, skipping...');
+      logger.info('Sync already in progress, skipping...');
       return;
     }
 
@@ -64,25 +67,18 @@ class SyncService {
     this.trayManager.updateStatus('syncing');
 
     try {
-      console.log('Starting receipt sync...');
-
-      // Optionally fetch last synced receipt from server
-      await this.fetchLastSyncedFromServer();
+      logger.info('Starting receipt sync...');
 
       // Retry failed receipts from in-memory queue first
-      if (this.failedQueue.length > 0) {
+      if (Object.keys(this.failedQueue).length > 0) {
         await this.retryFailedReceipts();
       }
 
       // Get recent receipts from SQL Server (only receipts after lastSyncedReceiptDate)
-      const receipts = await sqlConnector.getRecentReceipts(
-        config.sync.batchSize,
-        this.lastSyncedReceiptDate
-      );
+      const receipts = await sqlConnector.getRecentReceipts(config.sync.batchSize, this.lastSyncedReceiptDate);
 
-      console.log(`Found ${receipts.length} receipts to process`);
       if (this.lastSyncedReceiptDate) {
-        console.log(`Fetching receipts since: ${this.lastSyncedReceiptDate}`);
+        logger.info(`Fetching receipts since: ${this.lastSyncedReceiptDate}`);
       }
 
       if (receipts.length === 0) {
@@ -91,8 +87,10 @@ class SyncService {
         return;
       }
 
+      const groupedReceipts = _.groupBy(receipts, 'receiptNo');
+      logger.info(`Found ${Object.keys(groupedReceipts).length} receipts to process`);
       // Add receipts to in-memory sync queue
-      this.syncQueue = receipts;
+      this.syncQueue = groupedReceipts;
 
       // Process receipts from queue
       const results = await this.processReceipts();
@@ -108,68 +106,75 @@ class SyncService {
       this.store.set('lastSyncTime', this.lastSyncTime);
       this.store.set('lastSyncedReceiptDate', this.lastSyncedReceiptDate);
 
-      console.log(`Sync completed - Success: ${results.succeeded}, Failed: ${results.failed}`);
+      logger.info(`Sync completed - Success: ${results.succeeded}, Failed: ${results.failed}`);
 
       this.trayManager.updateStatus('idle');
       this.trayManager.updateTooltip(
-        `Last sync: ${moment(this.lastSyncTime).format('HH:mm:ss')}\n` +
-        `Total synced: ${this.syncStats.totalSynced}`
+        `Last sync: ${moment(this.lastSyncTime).format('HH:mm:ss')}\n` + `Total synced: ${this.syncStats.totalSynced}`
       );
-
     } catch (error) {
-      console.error('Sync error:', error);
+      logger.error('Sync error:', error);
       this.syncStats.lastError = error.message;
       this.trayManager.updateStatus('error');
       this.trayManager.updateTooltip(`Sync error: ${error.message}`);
     } finally {
       this.isSyncing = false;
       // Clear sync queue after processing
-      this.syncQueue = [];
+      this.syncQueue = {};
     }
   }
 
   async processReceipts() {
     const results = { succeeded: 0, failed: 0 };
 
-    while (this.syncQueue.length > 0) {
-      const receipt = this.syncQueue.shift(); // Take from front of queue
-
+    while (_.keys(this.syncQueue).length > 0) {
+      const receiptNo = _.keys(this.syncQueue)[0];
+      const receipts = this.syncQueue[receiptNo];
       try {
         // Get full receipt details
-        const receiptDetails = await sqlConnector.getReceiptDetails(receipt.InvoiceId);
+        if (receipts.length > 1) {
+          logger.info(`Processing split payments receipt: ${receiptNo}`);
+          const topMostReceipt = receipts[0];
+          const receiptDetails = await sqlConnector.getItemDetails(topMostReceipt.GUID);
+          if (!receiptDetails) {
+            logger.warn(`No details found for receipt ${topMostReceipt.receiptNo}`);
+            continue;
+          }
+          const apiPayload = this.transformReceiptData(receiptDetails, receipts);
+          await this.sendToReceiptAPI(apiPayload);
+          results.succeeded++;
+        } else {
+          logger.info(`Processing single payment receipt: ${receiptNo}`);
+          const receiptDetails = await sqlConnector.getItemDetails(receipts[0].GUID);
 
-        if (!receiptDetails) {
-          console.warn(`No details found for receipt ${receipt.InvoiceId}`);
-          continue;
+          if (!receiptDetails) {
+            logger.warn(`No details found for receipt ${receiptNo}`);
+            continue;
+          }
+          const apiPayload = this.transformReceiptData(receiptDetails, receipts);
+          await this.sendToReceiptAPI(apiPayload);
+          results.succeeded++;
         }
 
-        // Transform to API format
-        const apiPayload = this.transformReceiptData(receiptDetails);
-
-        // Send to remote API
-        await this.sendToReceiptAPI(apiPayload);
-
         // Update last synced receipt date
-        if (receipt.InvoiceDate) {
-          const receiptDate = new Date(receipt.InvoiceDate);
+        if (receipts[0].date) {
+          const receiptDate = new Date(receipts[0].date);
           if (!this.lastSyncedReceiptDate || receiptDate > new Date(this.lastSyncedReceiptDate)) {
             this.lastSyncedReceiptDate = receiptDate.toISOString();
           }
         }
-
-        results.succeeded++;
-        console.log(`✓ Synced receipt: ${receipt.BillNumber} (${receipt.InvoiceDate})`);
-
+        delete this.syncQueue[receiptNo];
+        logger.info(`✓ Synced receipt: ${receiptNo} (${receipts[0].date})`);
       } catch (error) {
-        console.error(`✗ Failed to sync receipt ${receipt.BillNumber}:`, error.message);
+        logger.error(`✗ Failed to sync receipt ${receiptNo}:`, error.message);
 
-        // Add to in-memory failed queue
-        this.failedQueue.push({
-          receipt,
+        // Add to in-memory failed queue (grouped by receiptNo, matching syncQueue structure)
+        this.failedQueue[receiptNo] = {
+          receipts: receipts, // Store all receipts for this receiptNo (for split payments)
           error: error.message,
           attempts: 1,
           lastAttempt: new Date().toISOString()
-        });
+        };
 
         results.failed++;
       }
@@ -179,114 +184,91 @@ class SyncService {
   }
 
   async retryFailedReceipts() {
-    console.log(`Retrying ${this.failedQueue.length} failed receipts...`);
+    const failedCount = Object.keys(this.failedQueue).length;
+    logger.info(`Retrying ${failedCount} failed receipts...`);
 
-    const stillFailed = [];
+    const stillFailed = {};
 
-    for (const failed of this.failedQueue) {
+    for (const receiptNo in this.failedQueue) {
+      const failed = this.failedQueue[receiptNo];
+
       if (failed.attempts >= config.sync.retryAttempts) {
-        console.log(`Max retries reached for ${failed.receipt.BillNumber}, skipping...`);
-        stillFailed.push(failed);
+        logger.warn(`Max retries reached for ${receiptNo}, skipping...`);
+        stillFailed[receiptNo] = failed;
         continue;
       }
 
       try {
-        const receiptDetails = await sqlConnector.getReceiptDetails(failed.receipt.InvoiceId);
-        const apiPayload = this.transformReceiptData(receiptDetails);
-        await this.sendToReceiptAPI(apiPayload);
+        const receipts = failed.receipts;
+        // Get full receipt details (similar to processReceipts)
+        if (receipts.length > 1) {
+          logger.info(`Retrying split payments receipt: ${receiptNo}`);
+          const topMostReceipt = receipts[0];
+          const receiptDetails = await sqlConnector.getItemDetails(topMostReceipt.GUID);
+          if (!receiptDetails) {
+            logger.warn(`No details found for receipt ${receiptNo}`);
+            continue;
+          }
+          const apiPayload = this.transformReceiptData(receiptDetails, receipts);
+          await this.sendToReceiptAPI(apiPayload);
+        } else {
+          logger.info(`Retrying single payment receipt: ${receiptNo}`);
+          const receiptDetails = await sqlConnector.getItemDetails(receipts[0].GUID);
+          if (!receiptDetails) {
+            logger.warn(`No details found for receipt ${receiptNo}`);
+            continue;
+          }
+          const apiPayload = this.transformReceiptData(receiptDetails, receipts);
+          await this.sendToReceiptAPI(apiPayload);
+        }
 
         // Update last synced receipt date
-        if (failed.receipt.InvoiceDate) {
-          const receiptDate = new Date(failed.receipt.InvoiceDate);
+        if (receipts[0].date) {
+          const receiptDate = new Date(receipts[0].date);
           if (!this.lastSyncedReceiptDate || receiptDate > new Date(this.lastSyncedReceiptDate)) {
             this.lastSyncedReceiptDate = receiptDate.toISOString();
           }
         }
 
-        console.log(`✓ Retry successful for ${failed.receipt.BillNumber}`);
-
+        logger.info(`✓ Retry successful for ${receiptNo}`);
       } catch (error) {
         // Still failing - increment attempts
         failed.attempts++;
         failed.lastAttempt = new Date().toISOString();
         failed.error = error.message;
-        stillFailed.push(failed);
+        stillFailed[receiptNo] = failed;
 
-        console.log(`✗ Retry failed for ${failed.receipt.BillNumber} (attempt ${failed.attempts})`);
+        logger.error(`✗ Retry failed for ${receiptNo} (attempt ${failed.attempts})`);
       }
     }
 
     this.failedQueue = stillFailed;
   }
 
-  /**
-   * Optionally fetch the last synced receipt from the server
-   * This helps synchronize state between multiple clients or after a reinstall
-   */
-  async fetchLastSyncedFromServer() {
-    // Skip if no endpoint configured
-    if (!config.receiptApi.lastSyncedEndpoint) {
-      return;
-    }
-
-    try {
-      console.log('Fetching last synced receipt from server...');
-
-      const endpoint = config.receiptApi.lastSyncedEndpoint
-        .replace('{STORE_ID}', config.store.storeId)
-        .replace('{ORGANIZATION_ID}', config.store.organizationId);
-
-      const response = await axios.get(
-        `${config.receiptApi.baseUrl}${endpoint}`,
-        {
-          headers: {
-            'x-api-key': config.receiptApi.apiKey
-          },
-          timeout: config.receiptApi.timeout
-        }
-      );
-
-      if (response.data && response.data.lastSyncedDate) {
-        const serverLastSyncedDate = new Date(response.data.lastSyncedDate);
-        const localLastSyncedDate = this.lastSyncedReceiptDate
-          ? new Date(this.lastSyncedReceiptDate)
-          : null;
-
-        // Use the more recent date between server and local
-        if (!localLastSyncedDate || serverLastSyncedDate > localLastSyncedDate) {
-          this.lastSyncedReceiptDate = serverLastSyncedDate.toISOString();
-          console.log(`Updated last synced date from server: ${this.lastSyncedReceiptDate}`);
-        }
-      }
-    } catch (error) {
-      console.warn('Could not fetch last synced receipt from server:', error.message);
-      // Continue with local tracking if server fetch fails
-    }
-  }
-
-  transformReceiptData(receiptDetails) {
-    const { main, items } = receiptDetails;
-
+  transformReceiptData(receiptDetails, receipts) {
+    const receipt = receipts[0];
     // Transform items
-    const transformedItems = items.map(item => ({
-      serialNo: item.SerialNumber,
-      name: item.ItemName,
-      quantity: item.Quantity,
-      unitPrice: item.MRP,
-      discountedPrice: item.FinalPrice,
-      discount: item.DiscountedAmount,
-      netAmount: item.ItemTotalAmount,
-      gst: item.TaxPercentage,
-      hsnCode: item.HSN,
-      itemCode: item.Barcode
+    const transformedItems = receiptDetails.map((item) => ({
+      serialNo: item.serialNo,
+      name: item.name,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      discount: item.discountAmount,
+      discountPercentage: item.discountPercentage,
+      billDiscount: item.billDiscountAmount,
+      netAmount: item.netAmount,
+      brand: item.brand,
+      category: item.category,
+      taxableAmount: item.taxableAmount,
+      gstAmount: item.gstAmount
     }));
 
     // Parse payment details
     const splitPayments = [];
-    if (main.PaymentDetailString) {
-      const payments = main.PaymentDetailString.split('|');
-      payments.forEach(str => {
-        const [method, amount] = str.split('~');
+    if (receipts.length > 1) {
+      receipts.forEach((r) => {
+        const method = r.method;
+        const amount = r.amount;
         if (method && amount) {
           splitPayments.push({ method, amount: parseFloat(amount) });
         }
@@ -295,102 +277,77 @@ class SyncService {
 
     // Parse GST details
     const gstDetails = [];
-    if (main.TaxDetailString) {
-      const gstSplit = main.TaxDetailString.split('~').filter(Boolean);
-      const gstMap = {};
-
-      gstSplit.forEach(obj => {
-        const cgstMatch = obj.match(/CGST ([0-9.]+) % \| ([0-9.]+)/);
-        const sgstMatch = obj.match(/SGST ([0-9.]+) % \| ([0-9.]+)/);
-
-        if (cgstMatch) {
-          const percentage = parseFloat(cgstMatch[1]);
-          const amount = parseFloat(cgstMatch[2]);
-          if (!gstMap[percentage]) gstMap[percentage] = { percentage: 0, cgst: 0, sgst: 0 };
-          gstMap[percentage].percentage += percentage;
-          gstMap[percentage].cgst = amount;
-        }
-
-        if (sgstMatch) {
-          const percentage = parseFloat(sgstMatch[1]);
-          const amount = parseFloat(sgstMatch[2]);
-          if (!gstMap[percentage]) gstMap[percentage] = { percentage: 0, cgst: 0, sgst: 0 };
-          gstMap[percentage].percentage += percentage;
-          gstMap[percentage].sgst = amount;
-        }
+    if (Array.isArray(receiptDetails) && receiptDetails.length > 0) {
+      const grouped = _.groupBy(receiptDetails, (item) => {
+        const gstPerc = typeof item.gst === 'number' ? item.gst : parseFloat(item.gst);
+        return gstPerc || 0;
       });
 
-      Object.values(gstMap).forEach(gst => {
-        const totalGst = gst.cgst + gst.sgst;
-        const taxableAmount = (totalGst * 100) / gst.percentage;
+      Object.entries(grouped).forEach(([percentage, items]) => {
+        const totalTax = _.sumBy(items, (item) => Number(item.gstAmount) || 0);
+        const totalTaxable = _.sumBy(items, (item) => Number(item.taxableAmount) || 0);
+
         gstDetails.push({
-          percentage: gst.percentage,
-          cgst: gst.cgst,
-          sgst: gst.sgst,
-          gst: totalGst,
-          taxableAmount: parseFloat(taxableAmount.toFixed(2))
+          percentage: parseFloat(percentage),
+          cgst: +(totalTax / 2).toFixed(2),
+          sgst: +(totalTax / 2).toFixed(2),
+          gst: +totalTax.toFixed(2),
+          taxableAmount: +totalTaxable.toFixed(2)
         });
       });
     }
-
+    const preDiscountTotal = items.reduce((acc, item) => acc + item.unitPrice, 0);
+    const totalTax = gstDetails.reduce((acc, gst) => acc + gst.gst, 0);
+    const totalQuantity = items.reduce((acc, item) => acc + item.quantity, 0);
     // Build payload
     return {
       receiptDetails: {
-        receiptNo: main.BillNumber,
-        date: moment(main.InvoiceDate).subtract(330, 'minutes').toISOString(),
-        counter: main.CRNumber,
-        counterPerson: main.Creator,
-        posId: main.CRNumber,
+        receiptNo: receipt.receiptNo,
+        date: moment(receipt.date).subtract(330, 'minutes').toISOString(),
         typeOfOrder: 'In-Store',
         invoiceType: 'Sales'
       },
       items: transformedItems,
       payment: {
         currency: 'INR',
-        totalItem: main.NumberOfItems,
-        totalQuantity: main.TotalItemQty,
-        totalTax: main.TaxGrandTotal,
-        totalAmount: main.GrandTotal,
-        adjustment: main.RoundOffAmount,
-        discount: main.DiscountTotal,
-        totalSavings: main.DiscountTotal,
-        savingsPercentage: main.DiscountTotalPer,
+        totalItem: items.length,
+        preDiscountTotal,
+        totalQuantity,
+        totalTax: totalTax,
+        totalAmount: receipt.totalAmount,
+        adjustment: receipt.RoundOffAmount,
+        discount: receipt.DiscountTotal,
+        totalSavings: receipt.DiscountTotal,
         isGstIncluded: true,
-        redemptions: main.StoreCreditUsed,
-        received: main.ReceivedAmount,
-        balance: main.ChangeDue,
+        received: receipt.ReceivedAmount,
+        balance: receipt.ChangeDue,
+        ...(splitPayments.length > 0 ? {} : { mode: receipt.method }),
         splitPayments
       },
       gstDetails,
       customerInfo: {
-        name: main.CustName,
-        firstName: main.FirstName,
-        lastName: main.LastName,
+        name: receipt.fullName,
         countryCode: '91',
-        mobileNumber: main.CustMobile,
+        mobileNumber: receipt.mobileNumber,
         whatsappOptIn: true
       },
       loyaltyProgram: {
-        pointsEarned: main.InvLP,
-        totalPoints: main.CustLP
+        pointsEarned: receipt.InvLP,
+        totalPoints: receipt.CustLP
       },
-      blzAPIKey: main.blzAPIKey || config.receiptApi.apiKey
+      blzAPIKey: config.store.blzAPIKey || config.receiptApi.apiKey
     };
   }
 
   async sendToReceiptAPI(payload) {
     try {
-      const response = await axios.post(
-        `${config.receiptApi.baseUrl}/api/v1/receipts`,
-        payload,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': payload.blzAPIKey || config.receiptApi.apiKey
-          },
-          timeout: config.receiptApi.timeout
-        }
-      );
+      const response = await axios.post(`${config.receiptApi.baseUrl}/api/Receipts/v1/create`, payload, {
+        headers: {
+          'Content-Type': 'application/json',
+          'blz-api-key': payload.blzAPIKey || config.receiptApi.apiKey
+        },
+        timeout: config.receiptApi.timeout
+      });
 
       return response.data;
     } catch (error) {
@@ -410,13 +367,13 @@ class SyncService {
       lastSyncTime: this.lastSyncTime,
       lastSyncedReceiptDate: this.lastSyncedReceiptDate,
       isSyncing: this.isSyncing,
-      queueSize: this.syncQueue.length,
-      failedCount: this.failedQueue.length
+      queueSize: Object.keys(this.syncQueue).length,
+      failedCount: Object.keys(this.failedQueue).length
     };
   }
 
   async forceSyncNow() {
-    console.log('Manual sync triggered');
+    logger.info('Manual sync triggered');
     await this.runSync();
   }
 }
