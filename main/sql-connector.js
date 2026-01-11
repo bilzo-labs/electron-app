@@ -9,8 +9,11 @@ class SQLConnector {
   constructor() {
     this.pool = null;
     this.isConnected = false;
-    this.posType = config.pos.type;
-    logger.info(`SQL Connector initialized for POS Type: ${this.posType}`);
+    logger.info(`SQL Connector initialized`);
+  }
+
+  getPosType() {
+    return config.pos.type;
   }
 
   async connect() {
@@ -53,15 +56,16 @@ class SQLConnector {
   async getRecentReceipts(limit = 50, sinceDate = null) {
     try {
       const pool = await this.connect();
+      const posType = this.getPosType();
 
       // Use HDPOS queries if POS type is HDPOS
-      if (this.posType === 'HDPOS') {
+      if (posType === 'HDPOS') {
         logger.debug('Using HDPOS-specific queries');
         return await HDPOSQueries.getRecentReceipts(pool, limit, sinceDate);
       }
 
       // Use QuickBill queries if POS type is QUICKBILL
-      if (this.posType === 'QUICKBILL') {
+      if (posType === 'QUICKBILL') {
         logger.debug('Using QuickBill-specific queries');
 
         // Get the most recent receipt number from server
@@ -138,15 +142,16 @@ class SQLConnector {
   async getItemDetails(invoiceId) {
     try {
       const pool = await this.connect();
+      const posType = this.getPosType();
 
       // Use HDPOS queries if POS type is HDPOS
-      if (this.posType === 'HDPOS') {
+      if (posType === 'HDPOS') {
         logger.debug('Using HDPOS-specific receipt details query');
         return await HDPOSQueries.getReceiptDetails(pool, invoiceId);
       }
 
       // Use QuickBill queries if POS type is QUICKBILL
-      if (this.posType === 'QUICKBILL') {
+      if (posType === 'QUICKBILL') {
         logger.debug('Using QuickBill-specific receipt details query');
         return await QuickBillQueries.getItemDetails(pool, invoiceId);
       }
