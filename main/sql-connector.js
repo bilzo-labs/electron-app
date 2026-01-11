@@ -1,14 +1,16 @@
 const sql = require('mssql');
 const { config } = require('../shared/config');
+const getLogger = require('../shared/logger');
 const HDPOSQueries = require('./sql-queries-hdpos');
 const QuickBillQueries = require('./sql-queries-quickbill');
+const logger = getLogger();
 
 class SQLConnector {
   constructor() {
     this.pool = null;
     this.isConnected = false;
     this.posType = config.pos.type;
-    console.log(`SQL Connector initialized for POS Type: ${this.posType}`);
+    logger.info(`SQL Connector initialized for POS Type: ${this.posType}`);
   }
 
   async connect() {
@@ -17,20 +19,20 @@ class SQLConnector {
         return this.pool;
       }
 
-      console.log('Connecting to SQL Server...');
+      logger.info('Connecting to SQL Server...');
       this.pool = await sql.connect(config.sqlServer);
       this.isConnected = true;
-      console.log('SQL Server connected successfully');
+      logger.info('SQL Server connected successfully');
 
       // Handle connection errors
       this.pool.on('error', (err) => {
-        console.error('SQL Pool Error:', err);
+        logger.error('SQL Pool Error:', err);
         this.isConnected = false;
       });
 
       return this.pool;
     } catch (error) {
-      console.error('SQL Connection Error:', error);
+      logger.error('SQL Connection Error:', error);
       this.isConnected = false;
       throw error;
     }
@@ -41,10 +43,10 @@ class SQLConnector {
       if (this.pool) {
         await this.pool.close();
         this.isConnected = false;
-        console.log('SQL Server disconnected');
+        logger.info('SQL Server disconnected');
       }
     } catch (error) {
-      console.error('SQL Disconnect Error:', error);
+      logger.error('SQL Disconnect Error:', error);
     }
   }
 
@@ -54,18 +56,42 @@ class SQLConnector {
 
       // Use HDPOS queries if POS type is HDPOS
       if (this.posType === 'HDPOS') {
-        console.log('Using HDPOS-specific queries');
+        logger.debug('Using HDPOS-specific queries');
         return await HDPOSQueries.getRecentReceipts(pool, limit, sinceDate);
       }
 
       // Use QuickBill queries if POS type is QUICKBILL
       if (this.posType === 'QUICKBILL') {
-        console.log('Using QuickBill-specific queries');
-        return await QuickBillQueries.getRecentReceipts(pool, limit, sinceDate);
+        logger.debug('Using QuickBill-specific queries');
+
+        // Get the most recent receipt number from server
+        let receiptNo = null;
+        try {
+          const axios = require('axios');
+          const { data } = await axios.get(`${config.validationApi.baseUrl}/api/Receipts/recent`, {
+            headers: {
+              'blz-api-key': config.validationApi.apiKey
+            },
+            timeout: config.validationApi.timeout
+          });
+          if (data) {
+            receiptNo = data.receiptDetails.receiptNo;
+
+            if (receiptNo) {
+              logger.debug(`Found most recent receipt on server: ${receiptNo}`);
+            } else {
+              logger.debug('No receipt number found in API response, syncing all recent receipts');
+            }
+          }
+        } catch (error) {
+          logger.warn('Failed to fetch recent receipt from server, syncing all recent receipts:', error.message);
+        }
+
+        return await QuickBillQueries.getRecentReceipts(pool, limit, sinceDate, receiptNo);
       }
 
       // Generic query for other POS systems
-      console.log('Using generic queries');
+      logger.debug('Using generic queries');
 
       // Default to last 24 hours if no sinceDate provided
       const dateFilter = sinceDate
@@ -104,29 +130,29 @@ class SQLConnector {
       const result = await request.query(query);
       return result.recordset;
     } catch (error) {
-      console.error('Error fetching recent receipts:', error);
+      logger.error('Error fetching recent receipts:', error);
       throw error;
     }
   }
 
-  async getReceiptDetails(invoiceId) {
+  async getItemDetails(invoiceId) {
     try {
       const pool = await this.connect();
 
       // Use HDPOS queries if POS type is HDPOS
       if (this.posType === 'HDPOS') {
-        console.log('Using HDPOS-specific receipt details query');
+        logger.debug('Using HDPOS-specific receipt details query');
         return await HDPOSQueries.getReceiptDetails(pool, invoiceId);
       }
 
       // Use QuickBill queries if POS type is QUICKBILL
       if (this.posType === 'QUICKBILL') {
-        console.log('Using QuickBill-specific receipt details query');
-        return await QuickBillQueries.getReceiptDetails(pool, invoiceId);
+        logger.debug('Using QuickBill-specific receipt details query');
+        return await QuickBillQueries.getItemDetails(pool, invoiceId);
       }
 
       // Generic queries for other POS systems
-      console.log('Using generic receipt details query');
+      logger.debug('Using generic receipt details query');
 
       // Main receipt query (without items)
       const mainQuery = `
@@ -222,13 +248,9 @@ class SQLConnector {
         WHERE SalesInvoice.Id = @invoiceId
       `;
 
-      const mainResult = await pool.request()
-        .input('invoiceId', sql.VarChar, invoiceId)
-        .query(mainQuery);
+      const mainResult = await pool.request().input('invoiceId', sql.VarChar, invoiceId).query(mainQuery);
 
-      const itemsResult = await pool.request()
-        .input('invoiceId', sql.VarChar, invoiceId)
-        .query(itemsQuery);
+      const itemsResult = await pool.request().input('invoiceId', sql.VarChar, invoiceId).query(itemsQuery);
 
       if (mainResult.recordset.length === 0) {
         return null;
@@ -239,7 +261,7 @@ class SQLConnector {
         items: itemsResult.recordset
       };
     } catch (error) {
-      console.error('Error fetching receipt details:', error);
+      logger.error('Error fetching receipt details:', error);
       throw error;
     }
   }
