@@ -9,7 +9,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Sync operations
   getSyncStats: () => ipcRenderer.invoke('get-sync-stats'),
   triggerSync: () => ipcRenderer.invoke('trigger-sync'),
-  checkSqlHealth: () => ipcRenderer.invoke('check-sql-health'),
 
   // Validation operations
   validateCoupon: (couponCode, mobile, purchaseAmount) =>

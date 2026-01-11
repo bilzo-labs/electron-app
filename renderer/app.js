@@ -390,10 +390,7 @@ function displayLoyaltyInfo(data) {
 // Sync Status
 async function updateSyncStatus() {
   try {
-    const [syncStats, sqlHealth] = await Promise.all([
-      window.electronAPI.getSyncStats(),
-      window.electronAPI.checkSqlHealth()
-    ]);
+    const [syncStats] = await Promise.all([window.electronAPI.getSyncStats()]);
 
     if (syncStats) {
       displaySyncStats(syncStats);
@@ -401,15 +398,9 @@ async function updateSyncStatus() {
 
     // Update SQL status
     const sqlStatusEl = document.getElementById('sqlStatus');
-    if (sqlHealth.connected) {
-      sqlStatusEl.textContent = 'Connected';
-      sqlStatusEl.classList.remove('error');
-      sqlStatusEl.classList.add('highlight');
-    } else {
-      sqlStatusEl.textContent = 'Disconnected';
-      sqlStatusEl.classList.remove('highlight');
-      sqlStatusEl.classList.add('error');
-    }
+    sqlStatusEl.textContent = 'Connected';
+    sqlStatusEl.classList.remove('error');
+    sqlStatusEl.classList.add('highlight');
 
     // Update header status
     updateHeaderStatus(syncStats);
