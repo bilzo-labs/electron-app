@@ -1,6 +1,6 @@
 {
   "name": "receipt-sync-electron-app",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Windows Taskbar Electron App for Receipt Sync & Customer Validation",
   "main": "main/index.js",
   "scripts": {
@@ -42,6 +42,18 @@
     "directories": {
       "output": "dist"
     },
+    "asar": true,
+    "asarUnpack": [],
+    "compression": "maximum",
+    "files": [
+      "main/**/*",
+      "renderer/**/*",
+      "shared/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "extraFiles": [],
+    "extraResources": [],
     "win": {
       "target": [
         "nsis"
@@ -54,6 +66,9 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Bilzo Receipt Sync"
-    }
+    },
+    "electronLanguages": [
+      "en-US"
+    ]
   }
 }
