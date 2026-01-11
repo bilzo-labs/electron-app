@@ -1,5 +1,6 @@
 const sql = require('mssql');
-
+const getLogger = require('../shared/logger');
+const logger = getLogger();
 class QuickBillQueries {
   /**
    * Get recent receipts from QuickBill database
@@ -69,7 +70,7 @@ class QuickBillQueries {
       const result = await request.query(query);
       return result.recordset;
     } catch (error) {
-      logging.error('Error fetching recent receipts from QuickBill:', error);
+      logger.error('Error fetching recent receipts from QuickBill:', error);
       throw error;
     }
   }
@@ -102,7 +103,7 @@ where VchHdrGUID = '${invoiceId}';`;
       const result = await request.query(itemQuery);
       return result.recordset;
     } catch (error) {
-      logging.error('Error fetching recent receipts from QuickBill:', error);
+      logger.error('Error fetching recent receipts from QuickBill:', error);
       throw error;
     }
   }
