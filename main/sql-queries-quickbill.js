@@ -26,7 +26,7 @@ class QuickBillQueries {
       if (sinceDate) {
         conditions.push(`qbvoucherheader.voucherDate > @sinceDate`);
       } else {
-        conditions.push(`qbvoucherheader.voucherDate >= DATEADD(hour, -24, GETDATE())`);
+        // conditions.push(`qbvoucherheader.voucherDate >= DATEADD(hour, -24, GETDATE())`);
       }
 
       const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
