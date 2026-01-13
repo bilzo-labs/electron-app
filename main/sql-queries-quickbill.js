@@ -67,7 +67,9 @@ class QuickBillQueries {
       if (sinceDate) {
         request.input('sinceDate', sql.DateTime, new Date(sinceDate));
       }
+      logger.info('QuickBill query:', query);
       const result = await request.query(query);
+      logger.info('QuickBill result:', result.recordset);
       return result.recordset;
     } catch (error) {
       logger.error('Error fetching recent receipts from QuickBill:', error);
@@ -99,8 +101,9 @@ where VchHdrGUID = '${invoiceId}';`;
       if (invoiceId !== null && invoiceId !== undefined) {
         request.input('invoiceId', sql.VarChar, invoiceId.toString());
       }
-
+      logger.info('QuickBill item query:', itemQuery);
       const result = await request.query(itemQuery);
+      logger.info('QuickBill item result:', result.recordset);
       return result.recordset;
     } catch (error) {
       logger.error('Error fetching recent receipts from QuickBill:', error);
