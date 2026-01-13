@@ -75,7 +75,7 @@ class SyncService {
       }
 
       // Get recent receipts from SQL Server (only receipts after lastSyncedReceiptDate)
-      const receipts = await sqlConnector.getRecentReceipts(config.sync.batchSize, this.lastSyncedReceiptDate);
+      const receipts = await sqlConnector.getRecentReceipts(config.sync.batchSize);
 
       if (this.lastSyncedReceiptDate) {
         logger.info(`Fetching receipts since: ${this.lastSyncedReceiptDate}`);
@@ -138,6 +138,7 @@ class SyncService {
           const receiptDetails = await sqlConnector.getItemDetails(topMostReceipt.GUID);
           if (!receiptDetails) {
             logger.warn(`No details found for receipt ${topMostReceipt.receiptNo}`);
+            delete this.syncQueue[receiptNo];
             continue;
           }
           const apiPayload = this.transformReceiptData(receiptDetails, receipts);
@@ -149,6 +150,7 @@ class SyncService {
 
           if (!receiptDetails) {
             logger.warn(`No details found for receipt ${receiptNo}`);
+            delete this.syncQueue[receiptNo];
             continue;
           }
           const apiPayload = this.transformReceiptData(receiptDetails, receipts);
@@ -176,6 +178,8 @@ class SyncService {
           lastAttempt: new Date().toISOString()
         };
 
+        // Remove from syncQueue so we can process the next receipt
+        delete this.syncQueue[receiptNo];
         results.failed++;
       }
     }
@@ -328,7 +332,7 @@ class SyncService {
       customerInfo: {
         name: receipt.fullName,
         countryCode: '91',
-        mobileNumber: receipt.mobileNumber,
+        mobileNumber: receipt.mobileNumber || '9876543210',
         whatsappOptIn: true
       },
       loyaltyProgram: {
