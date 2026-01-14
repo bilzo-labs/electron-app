@@ -18,8 +18,17 @@ class QuickBillQueries {
 
       // Filter by receiptNo if provided (get receipts with voucherno greater than the provided receiptNo)
       if (receiptNo !== null && receiptNo !== undefined) {
-        // String comparison since voucherno is a VARCHAR field
-        conditions.push(`qbvoucherheader.voucherno > @receiptNo`);
+        // Extract prefix and numeric part for proper comparison
+        // This handles both formats: PMC/S/6800 and ANN/S/25/11900
+        conditions.push(
+          `
+          qbvoucherheader.voucherno LIKE 
+            LEFT(@receiptNo, LEN(@receiptNo) - CHARINDEX('/', REVERSE(@receiptNo)) + 1) + '%'
+          AND CAST(RIGHT(qbvoucherheader.voucherno, 
+            CHARINDEX('/', REVERSE(qbvoucherheader.voucherno)) - 1) AS INT) > 
+            CAST(RIGHT(@receiptNo, CHARINDEX('/', REVERSE(@receiptNo)) - 1) AS INT)
+        `.trim()
+        );
       }
 
       // Date filter - default to last 24 hours if no sinceDate provided
