@@ -77,11 +77,8 @@ class SyncService {
       // Get recent receipts from SQL Server (only receipts after lastSyncedReceiptDate)
       const receipts = await sqlConnector.getRecentReceipts(config.sync.batchSize);
 
-      if (this.lastSyncedReceiptDate) {
-        logger.info(`Fetching receipts since: ${this.lastSyncedReceiptDate}`);
-      }
-
       if (receipts.length === 0) {
+        logger.info('No receipts found to sync');
         this.trayManager.updateStatus('idle');
         this.isSyncing = false;
         return;
@@ -168,6 +165,24 @@ class SyncService {
         delete this.syncQueue[receiptNo];
         logger.info(`✓ Synced receipt: ${receiptNo} (${receipts[0].date})`);
       } catch (error) {
+        // Handle case where receipt already exists on server
+        if (error.isAlreadyExists) {
+          logger.info(`⊘ Receipt ${receiptNo} already exists on server (recordId: ${error.recordId}), skipping...`);
+
+          // Update last synced receipt date even though it already exists
+          if (receipts[0].date) {
+            const receiptDate = new Date(receipts[0].date);
+            if (!this.lastSyncedReceiptDate || receiptDate > new Date(this.lastSyncedReceiptDate)) {
+              this.lastSyncedReceiptDate = receiptDate.toISOString();
+            }
+          }
+
+          // Remove from queue - don't process again
+          delete this.syncQueue[receiptNo];
+          // Don't count as success or failure - it's already synced
+          continue;
+        }
+
         logger.error(`✗ Failed to sync receipt ${receiptNo}:`, error.message);
 
         // Add to in-memory failed queue (grouped by receiptNo, matching syncQueue structure)
@@ -201,9 +216,8 @@ class SyncService {
         stillFailed[receiptNo] = failed;
         continue;
       }
-
+      const receipts = failed.receipts;
       try {
-        const receipts = failed.receipts;
         // Get full receipt details (similar to processReceipts)
         if (receipts.length > 1) {
           logger.info(`Retrying split payments receipt: ${receiptNo}`);
@@ -236,6 +250,22 @@ class SyncService {
 
         logger.info(`✓ Retry successful for ${receiptNo}`);
       } catch (error) {
+        // Handle case where receipt already exists on server
+        if (error.isAlreadyExists) {
+          logger.info(
+            `⊘ Receipt ${receiptNo} already exists on server (recordId: ${error.recordId}), removing from retry queue...`
+          );
+
+          // Update last synced receipt date even though it already exists
+          if (receipts[0].date) {
+            const receiptDate = new Date(receipts[0].date);
+            if (!this.lastSyncedReceiptDate || receiptDate > new Date(this.lastSyncedReceiptDate)) {
+              this.lastSyncedReceiptDate = receiptDate.toISOString();
+            }
+          }
+          continue;
+        }
+
         // Still failing - increment attempts
         failed.attempts++;
         failed.lastAttempt = new Date().toISOString();
@@ -353,8 +383,21 @@ class SyncService {
         timeout: config.receiptApi.timeout
       });
 
+      // Check if receipt already exists on server
+      if (response.data && response.data.message === 'Receipt Already Exist') {
+        const error = new Error(`Receipt Already Exist: ${response.data.recordId}`);
+        error.isAlreadyExists = true;
+        error.recordId = response.data.recordId;
+        throw error;
+      }
+
       return response.data;
     } catch (error) {
+      // Re-throw if it's our custom "already exists" error
+      if (error.isAlreadyExists) {
+        throw error;
+      }
+
       if (error.response) {
         throw new Error(`API Error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
       } else if (error.request) {
