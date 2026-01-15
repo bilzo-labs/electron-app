@@ -541,6 +541,57 @@ if (!gotTheLock) {
     };
   });
 
+  // Auto-start IPC handlers
+  ipcMain.handle('get-auto-start-status', () => {
+    try {
+      const loginItemSettings = app.getLoginItemSettings();
+      return {
+        enabled: loginItemSettings.openAtLogin,
+        success: true
+      };
+    } catch (error) {
+      logger.error('Failed to get auto-start status:', error);
+      return {
+        enabled: false,
+        success: false,
+        error: error.message
+      };
+    }
+  });
+
+  ipcMain.handle('set-auto-start', async (event, enabled) => {
+    try {
+      app.setLoginItemSettings({
+        openAtLogin: enabled,
+        path: app.getPath('exe'),
+        name: app.getName()
+      });
+
+      // Update config file to persist the setting
+      const { exportConfigToFile, reloadConfigFromFile } = require('../shared/config');
+      process.env.AUTO_START_ON_BOOT = enabled ? 'true' : 'false';
+
+      // Export updated config
+      if (app.isPackaged) {
+        exportConfigToFile(true); // Force update
+        reloadConfigFromFile(); // Reload to ensure consistency
+      }
+
+      logger.info(`Auto-start on boot ${enabled ? 'enabled' : 'disabled'}`);
+
+      return {
+        success: true,
+        enabled: enabled
+      };
+    } catch (error) {
+      logger.error('Failed to set auto-start:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  });
+
   // Quit when all windows are closed (except on macOS)
   app.on('window-all-closed', (event) => {
     event.preventDefault();
