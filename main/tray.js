@@ -76,9 +76,9 @@ class TrayManager {
       {
         label: 'Sync Stats',
         enabled: syncService !== null,
-        click: () => {
+        click: async () => {
           if (syncService) {
-            const stats = syncService.getStats();
+            const stats = await syncService.getStats();
             this.windowManager.sendToRenderer('sync-stats', stats);
             this.windowManager.show();
           }
