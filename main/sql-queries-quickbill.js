@@ -11,75 +11,92 @@ class QuickBillQueries {
    * @param {string|Date} sinceDate - Optional date to fetch receipts after (if null, fetches last 24 hours)
    * @param {string|number} receiptNo - Optional receipt number to filter receipts (only returns receipts newer than this)
    */
+
   static async getRecentReceipts(pool, limit = 50, sinceDate = null, receiptNo = null) {
     try {
-      // Build WHERE clause conditions
       const conditions = [];
 
-      // Filter by receiptNo if provided (get receipts with voucherno greater than the provided receiptNo)
-      if (receiptNo !== null && receiptNo !== undefined) {
-        // Extract prefix and numeric part for proper comparison
-        // This handles both formats: PMC/S/6800 and ANN/S/25/11900
+      const safeLimit = Number.isInteger(limit) && limit > 0 ? limit : 50;
+      const normalizedReceiptNo =
+        receiptNo !== null && receiptNo !== undefined && String(receiptNo).trim() !== ''
+          ? String(receiptNo).trim()
+          : null;
+
+      // ReceiptNo filter: SAME prefix, numeric suffix <= provided receiptNo
+      if (normalizedReceiptNo) {
         conditions.push(
           `
-          qbvoucherheader.voucherno LIKE 
-            LEFT(@receiptNo, LEN(@receiptNo) - CHARINDEX('/', REVERSE(@receiptNo)) + 1) + '%'
-          AND CAST(RIGHT(qbvoucherheader.voucherno, 
-            CHARINDEX('/', REVERSE(qbvoucherheader.voucherno)) - 1) AS INT) > 
-            CAST(RIGHT(@receiptNo, CHARINDEX('/', REVERSE(@receiptNo)) - 1) AS INT)
+          LTRIM(RTRIM(qbvoucherheader.voucherno)) LIKE
+            LEFT(
+              LTRIM(RTRIM(@receiptNo)),
+              LEN(LTRIM(RTRIM(@receiptNo))) - CHARINDEX('/', REVERSE(LTRIM(RTRIM(@receiptNo)))) + 1
+            ) + '%'
+          AND
+          CASE
+            WHEN RIGHT(
+                   LTRIM(RTRIM(qbvoucherheader.voucherno)),
+                   CHARINDEX('/', REVERSE(LTRIM(RTRIM(qbvoucherheader.voucherno)))) - 1
+                 ) NOT LIKE '%[^0-9]%'
+            THEN CAST(
+                   RIGHT(
+                     LTRIM(RTRIM(qbvoucherheader.voucherno)),
+                     CHARINDEX('/', REVERSE(LTRIM(RTRIM(qbvoucherheader.voucherno)))) - 1
+                   ) AS INT
+                 )
+            ELSE -1
+          END <=
+          CAST(
+            RIGHT(
+              LTRIM(RTRIM(@receiptNo)),
+              CHARINDEX('/', REVERSE(LTRIM(RTRIM(@receiptNo)))) - 1
+            ) AS INT
+          )
         `.trim()
         );
       }
 
-      // Date filter - default to last 24 hours if no sinceDate provided
       if (sinceDate) {
-        conditions.push(`qbvoucherheader.voucherDate > @sinceDate`);
-      } else {
-        // conditions.push(`qbvoucherheader.voucherDate >= DATEADD(hour, -24, GETDATE())`);
+        conditions.push(`qbvoucherheader.DateInsert > @sinceDate`);
       }
 
-      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+      const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
-      // Query based on getReceiptDetail structure - get recent receipts sorted from latest to oldest
       const query = `
-        SELECT TOP ${limit}
-          qbvoucherheader.QBGUID as GUID,
-          qbvoucherheader.voucherno as receiptNo,
-          qbvoucherheader.voucherDate as date,
-          qbvoucherheader.vchnetamount as totalAmount,
-          qbledger.LedgerName as fullName,
-          qbmailingaddres.MobileNo as mobileNumber,
-          payModes.PayModeName as method,
-          tenderDetails.ReceiptAmt as amount,
-          NULL as CreatedBy
-        FROM QbVoucherHeader as qbvoucherheader WITH (NOLOCK)
-        JOIN QbLedger as qbledger WITH (NOLOCK)
-          ON qbledger.QBGUID = qbvoucherheader.PartyGUID 
-        JOIN QbMaillingAddress as qbmailingaddres WITH (NOLOCK)
+        SELECT TOP (${safeLimit})
+          qbvoucherheader.QBGUID AS GUID,
+          qbvoucherheader.voucherno AS receiptNo,
+          qbvoucherheader.DateInsert AS date,
+          qbvoucherheader.vchnetamount AS totalAmount,
+          qbledger.LedgerName AS fullName,
+          qbmailingaddres.MobileNo AS mobileNumber,
+          payModes.PayModeName AS method,
+          tenderDetails.ReceiptAmt AS amount,
+          NULL AS CreatedBy
+        FROM QbVoucherHeader AS qbvoucherheader WITH (NOLOCK)
+        JOIN QbLedger AS qbledger WITH (NOLOCK)
+          ON qbledger.QBGUID = qbvoucherheader.PartyGUID
+        JOIN QbMaillingAddress AS qbmailingaddres WITH (NOLOCK)
           ON qbledger.QBGUID = qbmailingaddres.LinkGUID
-        JOIN QbTenderDetails as tenderDetails WITH (NOLOCK)
+        JOIN QbTenderDetails AS tenderDetails WITH (NOLOCK)
           ON tenderDetails.VchHdrGUID = qbvoucherheader.QBGUID
-        JOIN QbPayModes as payModes WITH (NOLOCK)
+        JOIN QbPayModes AS payModes WITH (NOLOCK)
           ON payModes.QBGUID = tenderDetails.PayModeGuid
         ${whereClause}
-        ORDER BY qbvoucherheader.voucherno DESC, qbvoucherheader.voucherDate DESC
+        ORDER BY qbvoucherheader.DateInsert DESC,
+                 qbvoucherheader.voucherno DESC
       `;
 
       const request = pool.request();
 
-      // Add receiptNo parameter if provided
-      if (receiptNo !== null && receiptNo !== undefined) {
-        request.input('receiptNo', sql.VarChar, receiptNo.toString());
+      if (normalizedReceiptNo) {
+        request.input('receiptNo', sql.VarChar(50), normalizedReceiptNo);
       }
-
-      // Add sinceDate parameter if provided
       if (sinceDate) {
         request.input('sinceDate', sql.DateTime, new Date(sinceDate));
       }
-      logger.info('QuickBill query:', query);
+
       const result = await request.query(query);
-      logger.info('QuickBill result:', result.recordset);
-      return result.recordset;
+      return result.recordset || [];
     } catch (error) {
       logger.error('Error fetching recent receipts from QuickBill:', error);
       throw error;
@@ -110,6 +127,7 @@ where VchHdrGUID = '${invoiceId}';`;
       if (invoiceId !== null && invoiceId !== undefined) {
         request.input('invoiceId', sql.VarChar, invoiceId.toString());
       }
+      logger.info('QuickBill item for invoice:', invoiceId);
       logger.info('QuickBill item query:', itemQuery);
       const result = await request.query(itemQuery);
       logger.info('QuickBill item result:', result.recordset);
