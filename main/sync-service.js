@@ -16,6 +16,8 @@ class SyncService {
     this.isSyncing = false;
     this.lastSyncTime = this.store.get('lastSyncTime', null);
     this.lastSyncedReceiptDate = this.store.get('lastSyncedReceiptDate', null);
+    this.lastSyncedReceiptNo = this.store.get('lastSyncedReceiptNo', null);
+    this.lastReceiptOnServer = null; // Will be fetched on demand
     this.syncQueue = {}; // In-memory queue for receipts to be synced
     this.failedQueue = {}; // In-memory queue for failed receipts (separate from persisted)
     this.syncStats = {
@@ -102,6 +104,7 @@ class SyncService {
       this.store.set('totalFailed', this.syncStats.totalFailed);
       this.store.set('lastSyncTime', this.lastSyncTime);
       this.store.set('lastSyncedReceiptDate', this.lastSyncedReceiptDate);
+      this.store.set('lastSyncedReceiptNo', this.lastSyncedReceiptNo);
 
       logger.info(`Sync completed - Success: ${results.succeeded}, Failed: ${results.failed}`);
 
@@ -155,11 +158,12 @@ class SyncService {
           results.succeeded++;
         }
 
-        // Update last synced receipt date
+        // Update last synced receipt date and receipt number
         if (receipts[0].date) {
           const receiptDate = new Date(receipts[0].date);
           if (!this.lastSyncedReceiptDate || receiptDate > new Date(this.lastSyncedReceiptDate)) {
             this.lastSyncedReceiptDate = receiptDate.toISOString();
+            this.lastSyncedReceiptNo = receiptNo;
           }
         }
         delete this.syncQueue[receiptNo];
@@ -169,11 +173,12 @@ class SyncService {
         if (error.isAlreadyExists) {
           logger.info(`⊘ Receipt ${receiptNo} already exists on server (recordId: ${error.recordId}), skipping...`);
 
-          // Update last synced receipt date even though it already exists
+          // Update last synced receipt date and receipt number even though it already exists
           if (receipts[0].date) {
             const receiptDate = new Date(receipts[0].date);
             if (!this.lastSyncedReceiptDate || receiptDate > new Date(this.lastSyncedReceiptDate)) {
               this.lastSyncedReceiptDate = receiptDate.toISOString();
+              this.lastSyncedReceiptNo = receiptNo;
             }
           }
 
@@ -240,11 +245,12 @@ class SyncService {
           await this.sendToReceiptAPI(apiPayload);
         }
 
-        // Update last synced receipt date
+        // Update last synced receipt date and receipt number
         if (receipts[0].date) {
           const receiptDate = new Date(receipts[0].date);
           if (!this.lastSyncedReceiptDate || receiptDate > new Date(this.lastSyncedReceiptDate)) {
             this.lastSyncedReceiptDate = receiptDate.toISOString();
+            this.lastSyncedReceiptNo = receiptNo;
           }
         }
 
@@ -256,11 +262,12 @@ class SyncService {
             `⊘ Receipt ${receiptNo} already exists on server (recordId: ${error.recordId}), removing from retry queue...`
           );
 
-          // Update last synced receipt date even though it already exists
+          // Update last synced receipt date and receipt number even though it already exists
           if (receipts[0].date) {
             const receiptDate = new Date(receipts[0].date);
             if (!this.lastSyncedReceiptDate || receiptDate > new Date(this.lastSyncedReceiptDate)) {
               this.lastSyncedReceiptDate = receiptDate.toISOString();
+              this.lastSyncedReceiptNo = receiptNo;
             }
           }
           continue;
@@ -309,6 +316,13 @@ class SyncService {
       });
     }
 
+    // Find loyalty redemption (POINTS payment mode)
+    let loyaltyRedemptions = null;
+    const pointsPayment = splitPayments.find((sp) => sp.method && sp.method.toUpperCase() === 'POINTS');
+    if (pointsPayment) {
+      loyaltyRedemptions = pointsPayment.amount;
+    }
+
     // Parse GST details
     const gstDetails = [];
     if (Array.isArray(receiptDetails) && receiptDetails.length > 0) {
@@ -333,6 +347,7 @@ class SyncService {
     const preDiscountTotal = transformedItems.reduce((acc, item) => acc + item.unitPrice, 0);
     const totalTax = gstDetails.reduce((acc, gst) => acc + gst.gst, 0);
     const totalQuantity = transformedItems.reduce((acc, item) => acc + item.quantity, 0);
+
     // Build payload
     return {
       receiptDetails: {
@@ -352,6 +367,7 @@ class SyncService {
         adjustment: receipt.RoundOffAmount,
         discount: receipt.DiscountTotal,
         totalSavings: receipt.DiscountTotal,
+        loyaltyRedemptions: loyaltyRedemptions,
         isGstIncluded: true,
         received: receipt.ReceivedAmount,
         balance: receipt.ChangeDue,
@@ -364,10 +380,6 @@ class SyncService {
         countryCode: '91',
         mobileNumber: receipt.mobileNumber || '9876543210',
         whatsappOptIn: true
-      },
-      loyaltyProgram: {
-        pointsEarned: receipt.InvLP,
-        totalPoints: receipt.CustLP
       },
       blzAPIKey: config.store.blzAPIKey || config.receiptApi.apiKey
     };
@@ -408,11 +420,34 @@ class SyncService {
     }
   }
 
-  getStats() {
+  async getLastReceiptOnServer() {
+    try {
+      const response = await axios.get(`${config.validationApi.baseUrl}/api/Receipts/recent`, {
+        headers: {
+          'blz-api-key': config.validationApi.apiKey || config.receiptApi.apiKey
+        },
+        timeout: config.validationApi.timeout || 10000
+      });
+      if (response.data && response.data.receiptDetails && response.data.receiptDetails.receiptNo) {
+        return response.data.receiptDetails.receiptNo;
+      }
+      return null;
+    } catch (error) {
+      logger.warn('Failed to fetch last receipt on server:', error.message);
+      return null;
+    }
+  }
+
+  async getStats() {
+    // Fetch last receipt on server
+    const lastReceiptOnServer = await this.getLastReceiptOnServer();
+
     return {
       ...this.syncStats,
       lastSyncTime: this.lastSyncTime,
       lastSyncedReceiptDate: this.lastSyncedReceiptDate,
+      lastSyncedReceiptNo: this.lastSyncedReceiptNo,
+      lastReceiptOnServer: lastReceiptOnServer,
       isSyncing: this.isSyncing,
       queueSize: Object.keys(this.syncQueue).length,
       failedCount: Object.keys(this.failedQueue).length
