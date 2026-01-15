@@ -74,6 +74,9 @@ function setupEventListeners() {
   document.getElementById('refreshSync').addEventListener('click', updateSyncStatus);
   document.getElementById('forceSyncNow').addEventListener('click', handleForceSync);
 
+  // Auto-start controls
+  document.getElementById('toggleAutoStart').addEventListener('click', handleToggleAutoStart);
+
   // Update controls
   document.getElementById('checkForUpdates').addEventListener('click', handleCheckForUpdates);
   document.getElementById('downloadUpdate').addEventListener('click', handleDownloadUpdate);
@@ -92,6 +95,9 @@ function setupEventListeners() {
 
   // Initialize update status
   initializeUpdateStatus();
+
+  // Initialize auto-start status
+  initializeAutoStartStatus();
 }
 
 // Customer Search
@@ -662,5 +668,69 @@ async function handleInstallUpdate() {
     button.classList.remove('loading');
     button.textContent = 'Restart & Install';
     button.disabled = false;
+  }
+}
+
+// Auto-start Functions
+async function initializeAutoStartStatus() {
+  try {
+    const status = await window.electronAPI.getAutoStartStatus();
+    if (status.success !== false) {
+      updateAutoStartUI(status.enabled);
+    } else {
+      document.getElementById('autoStartStatus').textContent = 'Error checking status';
+      document.getElementById('autoStartStatus').className = 'value error';
+    }
+  } catch (error) {
+    console.error('Failed to get auto-start status:', error);
+    document.getElementById('autoStartStatus').textContent = 'Error';
+    document.getElementById('autoStartStatus').className = 'value error';
+  }
+}
+
+function updateAutoStartUI(enabled) {
+  const statusEl = document.getElementById('autoStartStatus');
+  const button = document.getElementById('toggleAutoStart');
+
+  if (enabled) {
+    statusEl.textContent = 'Enabled';
+    statusEl.className = 'value highlight';
+    button.textContent = 'Disable Auto-start';
+    button.classList.remove('btn-secondary');
+    button.classList.add('btn-primary');
+  } else {
+    statusEl.textContent = 'Disabled';
+    statusEl.className = 'value';
+    button.textContent = 'Enable Auto-start';
+    button.classList.remove('btn-primary');
+    button.classList.add('btn-secondary');
+  }
+}
+
+async function handleToggleAutoStart() {
+  const button = document.getElementById('toggleAutoStart');
+  const currentStatus = document.getElementById('autoStartStatus').textContent;
+  const isCurrentlyEnabled = currentStatus === 'Enabled';
+  const newStatus = !isCurrentlyEnabled;
+
+  button.classList.add('loading');
+  button.disabled = true;
+  button.textContent = newStatus ? 'Enabling...' : 'Disabling...';
+
+  try {
+    const result = await window.electronAPI.setAutoStart(newStatus);
+    if (result.success) {
+      updateAutoStartUI(result.enabled);
+      showMessage(`Auto-start ${result.enabled ? 'enabled' : 'disabled'} successfully`, 'success');
+    } else {
+      showMessage(`Failed to ${newStatus ? 'enable' : 'disable'} auto-start: ${result.error}`, 'error');
+    }
+  } catch (error) {
+    showMessage(`Error: ${error.message}`, 'error');
+    console.error('Failed to toggle auto-start:', error);
+  } finally {
+    button.classList.remove('loading');
+    button.disabled = false;
+    // Button text will be updated by updateAutoStartUI
   }
 }
