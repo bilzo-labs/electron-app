@@ -22,35 +22,44 @@ class QuickBillQueries {
           ? String(receiptNo).trim()
           : null;
 
-      // ReceiptNo filter: SAME prefix, numeric suffix <= provided receiptNo
+      // ReceiptNo filter: SAME prefix, numeric suffix > provided receiptNo
       if (normalizedReceiptNo) {
+        // Check if receiptNo contains a slash (has prefix)
         conditions.push(
           `
-          LTRIM(RTRIM(qbvoucherheader.voucherno)) LIKE
-            LEFT(
-              LTRIM(RTRIM(@receiptNo)),
-              LEN(LTRIM(RTRIM(@receiptNo))) - CHARINDEX('/', REVERSE(LTRIM(RTRIM(@receiptNo)))) + 1
-            ) + '%'
+          qbvoucherheader.voucherno > @receiptNo
           AND
           CASE
-            WHEN RIGHT(
-                   LTRIM(RTRIM(qbvoucherheader.voucherno)),
-                   CHARINDEX('/', REVERSE(LTRIM(RTRIM(qbvoucherheader.voucherno)))) - 1
-                 ) NOT LIKE '%[^0-9]%'
-            THEN CAST(
-                   RIGHT(
-                     LTRIM(RTRIM(qbvoucherheader.voucherno)),
-                     CHARINDEX('/', REVERSE(LTRIM(RTRIM(qbvoucherheader.voucherno)))) - 1
-                   ) AS INT
-                 )
-            ELSE -1
-          END <=
-          CAST(
-            RIGHT(
-              LTRIM(RTRIM(@receiptNo)),
-              CHARINDEX('/', REVERSE(LTRIM(RTRIM(@receiptNo)))) - 1
-            ) AS INT
-          )
+            WHEN CHARINDEX('/', REVERSE(@receiptNo)) > 0
+            THEN
+              CASE
+                WHEN qbvoucherheader.voucherno LIKE
+                  LEFT(
+                    @receiptNo,
+                    LEN(@receiptNo) - CHARINDEX('/', REVERSE(@receiptNo)) + 1
+                  ) + '%'
+                  AND CHARINDEX('/', REVERSE(qbvoucherheader.voucherno)) > 0
+                THEN
+                  CASE
+                    WHEN CAST(
+                      RIGHT(
+                        qbvoucherheader.voucherno,
+                        CHARINDEX('/', REVERSE(qbvoucherheader.voucherno)) - 1
+                      ) AS INT
+                    ) >
+                    CAST(
+                      RIGHT(
+                        @receiptNo,
+                        CHARINDEX('/', REVERSE(@receiptNo)) - 1
+                      ) AS INT
+                    )
+                    THEN 1
+                    ELSE 0
+                  END
+                ELSE 0
+              END
+            ELSE 1
+          END = 1
         `.trim()
         );
       }
@@ -82,8 +91,8 @@ class QuickBillQueries {
         JOIN QbPayModes AS payModes WITH (NOLOCK)
           ON payModes.QBGUID = tenderDetails.PayModeGuid
         ${whereClause}
-        ORDER BY qbvoucherheader.DateInsert DESC,
-                 qbvoucherheader.voucherno DESC
+        ORDER BY qbvoucherheader.voucherno DESC,
+                 qbvoucherheader.DateInsert DESC
       `;
 
       const request = pool.request();
