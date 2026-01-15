@@ -74,11 +74,24 @@ function setupEventListeners() {
   document.getElementById('refreshSync').addEventListener('click', updateSyncStatus);
   document.getElementById('forceSyncNow').addEventListener('click', handleForceSync);
 
+  // Update controls
+  document.getElementById('checkForUpdates').addEventListener('click', handleCheckForUpdates);
+  document.getElementById('downloadUpdate').addEventListener('click', handleDownloadUpdate);
+  document.getElementById('installUpdate').addEventListener('click', handleInstallUpdate);
+
   // Listen for sync stats updates
   window.electronAPI.onSyncStats((stats) => {
     displaySyncStats(stats);
     showMessage('Sync stats updated', 'info');
   });
+
+  // Listen for update status updates
+  window.electronAPI.onUpdateStatus((status) => {
+    updateUpdateStatusUI(status);
+  });
+
+  // Initialize update status
+  initializeUpdateStatus();
 }
 
 // Customer Search
@@ -416,6 +429,8 @@ function displaySyncStats(stats) {
     : 'Never';
   document.getElementById('totalSynced').textContent = stats.totalSynced || 0;
   document.getElementById('totalFailed').textContent = stats.failedCount || 0;
+  document.getElementById('lastSyncedReceiptNo').textContent = stats.lastSyncedReceiptNo || '-';
+  document.getElementById('lastReceiptOnServer').textContent = stats.lastReceiptOnServer || '-';
 }
 
 function updateHeaderStatus(stats) {
@@ -490,3 +505,162 @@ setInterval(() => {
     updateSyncStatus();
   }
 }, 30000);
+
+// Update Status Functions
+async function initializeUpdateStatus() {
+  try {
+    const status = await window.electronAPI.getUpdateStatus();
+    if (status) {
+      document.getElementById('currentVersion').textContent = status.currentVersion || 'Unknown';
+      updateUpdateStatusUI({
+        status: status.downloaded ? 'downloaded' : status.available ? 'available' : 'not-available',
+        version: status.version,
+        error: status.error
+      });
+    }
+  } catch (error) {
+    console.error('Failed to get update status:', error);
+  }
+}
+
+function updateUpdateStatusUI(statusData) {
+  const statusText = document.getElementById('updateStatusText');
+  const downloadBtn = document.getElementById('downloadUpdate');
+  const installBtn = document.getElementById('installUpdate');
+  const progressContainer = document.getElementById('updateProgress');
+  const progressFill = document.getElementById('updateProgressFill');
+  const progressText = document.getElementById('updateProgressText');
+
+  switch (statusData.status) {
+    case 'checking':
+      statusText.textContent = 'Checking for updates...';
+      statusText.className = 'value';
+      downloadBtn.style.display = 'none';
+      installBtn.style.display = 'none';
+      progressContainer.style.display = 'none';
+      break;
+
+    case 'available':
+      statusText.textContent = `Update ${statusData.version} available`;
+      statusText.className = 'value highlight';
+      downloadBtn.style.display = 'inline-block';
+      installBtn.style.display = 'none';
+      progressContainer.style.display = 'none';
+      showMessage(`Update ${statusData.version} is available`, 'info');
+      break;
+
+    case 'downloading':
+      statusText.textContent = `Downloading update ${statusData.version}...`;
+      statusText.className = 'value';
+      downloadBtn.style.display = 'none';
+      installBtn.style.display = 'none';
+      progressContainer.style.display = 'block';
+      const progress = Math.round(statusData.progress || 0);
+      progressFill.style.width = `${progress}%`;
+      progressText.textContent = `${progress}%`;
+      break;
+
+    case 'downloaded':
+      statusText.textContent = `Update ${statusData.version} downloaded`;
+      statusText.className = 'value highlight';
+      downloadBtn.style.display = 'none';
+      installBtn.style.display = 'inline-block';
+      progressContainer.style.display = 'none';
+      showMessage('Update downloaded. Click "Restart & Install" to apply.', 'info');
+      break;
+
+    case 'not-available':
+      statusText.textContent = 'You are using the latest version';
+      statusText.className = 'value';
+      downloadBtn.style.display = 'none';
+      installBtn.style.display = 'none';
+      progressContainer.style.display = 'none';
+      break;
+
+    case 'error':
+      statusText.textContent = `Update error: ${statusData.error || 'Unknown error'}`;
+      statusText.className = 'value error';
+      downloadBtn.style.display = 'none';
+      installBtn.style.display = 'none';
+      progressContainer.style.display = 'none';
+      showMessage(`Update error: ${statusData.error}`, 'error');
+      break;
+
+    default:
+      statusText.textContent = 'Unknown status';
+      statusText.className = 'value';
+      downloadBtn.style.display = 'none';
+      installBtn.style.display = 'none';
+      progressContainer.style.display = 'none';
+  }
+}
+
+async function handleCheckForUpdates() {
+  const button = document.getElementById('checkForUpdates');
+  button.classList.add('loading');
+  button.textContent = 'Checking...';
+  button.disabled = true;
+
+  try {
+    const result = await window.electronAPI.checkForUpdates();
+    if (result.success) {
+      showMessage('Checking for updates...', 'info');
+    } else {
+      showMessage(`Failed to check for updates: ${result.error}`, 'error');
+    }
+  } catch (error) {
+    showMessage(`Error: ${error.message}`, 'error');
+  } finally {
+    button.classList.remove('loading');
+    button.textContent = 'Check for Updates';
+    button.disabled = false;
+  }
+}
+
+async function handleDownloadUpdate() {
+  const button = document.getElementById('downloadUpdate');
+  button.classList.add('loading');
+  button.textContent = 'Downloading...';
+  button.disabled = true;
+
+  try {
+    const result = await window.electronAPI.downloadUpdate();
+    if (result.success) {
+      showMessage('Download started...', 'info');
+    } else {
+      showMessage(`Failed to download update: ${result.error}`, 'error');
+      button.classList.remove('loading');
+      button.textContent = 'Download Update';
+      button.disabled = false;
+    }
+  } catch (error) {
+    showMessage(`Error: ${error.message}`, 'error');
+    button.classList.remove('loading');
+    button.textContent = 'Download Update';
+    button.disabled = false;
+  }
+}
+
+async function handleInstallUpdate() {
+  const button = document.getElementById('installUpdate');
+  button.classList.add('loading');
+  button.textContent = 'Restarting...';
+  button.disabled = true;
+
+  try {
+    const result = await window.electronAPI.installUpdate();
+    if (result.success) {
+      showMessage('Restarting to install update...', 'info');
+    } else {
+      showMessage(`Failed to install update: ${result.error}`, 'error');
+      button.classList.remove('loading');
+      button.textContent = 'Restart & Install';
+      button.disabled = false;
+    }
+  } catch (error) {
+    showMessage(`Error: ${error.message}`, 'error');
+    button.classList.remove('loading');
+    button.textContent = 'Restart & Install';
+    button.disabled = false;
+  }
+}

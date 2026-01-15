@@ -32,5 +32,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Event listeners
   onSyncStats: (callback) => {
     ipcRenderer.on('sync-stats', (event, data) => callback(data));
-  }
+  },
+  onUpdateStatus: (callback) => {
+    ipcRenderer.on('update-status', (event, data) => callback(data));
+  },
+
+  // Update operations
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  downloadUpdate: () => ipcRenderer.invoke('download-update'),
+  installUpdate: () => ipcRenderer.invoke('install-update'),
+  getUpdateStatus: () => ipcRenderer.invoke('get-update-status')
 });
