@@ -1,6 +1,6 @@
 {
   "name": "receipt-sync-electron-app",
-  "version": "5.1.0",
+  "version": "5.2.0",
   "description": "Windows Taskbar Electron App for Receipt Sync & Customer Validation",
   "main": "main/index.js",
   "scripts": {
@@ -8,6 +8,7 @@
     "dev": "nodemon --exec electron . --watch main",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
+    "publish:win": "electron-builder --win --publish always",
     "package": "electron-builder --dir",
     "postinstall": "electron-builder install-app-deps"
   },
