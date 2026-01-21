@@ -71,7 +71,7 @@ class QuickBillQueries {
       const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
       const query = `
-        SELECT TOP (${safeLimit})
+        SELECT
           qbvoucherheader.QBGUID AS GUID,
           qbvoucherheader.voucherno AS receiptNo,
           qbvoucherheader.DateInsert AS date,
