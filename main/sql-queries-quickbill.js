@@ -12,11 +12,9 @@ class QuickBillQueries {
    * @param {string|number} receiptNo - Optional receipt number to filter receipts (only returns receipts newer than this)
    */
 
-  static async getRecentReceipts(pool, limit = 50, sinceDate = null, receiptNo = null) {
+  static async getRecentReceipts(pool, receiptNo = null) {
     try {
       const conditions = [];
-
-      const safeLimit = Number.isInteger(limit) && limit > 0 ? limit : 50;
       const normalizedReceiptNo =
         receiptNo !== null && receiptNo !== undefined && String(receiptNo).trim() !== ''
           ? String(receiptNo).trim()
@@ -64,10 +62,6 @@ class QuickBillQueries {
         );
       }
 
-      if (sinceDate) {
-        conditions.push(`qbvoucherheader.DateInsert > @sinceDate`);
-      }
-
       const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
       const query = `
@@ -100,11 +94,9 @@ class QuickBillQueries {
       if (normalizedReceiptNo) {
         request.input('receiptNo', sql.VarChar(50), normalizedReceiptNo);
       }
-      if (sinceDate) {
-        request.input('sinceDate', sql.DateTime, new Date(sinceDate));
-      }
 
       const result = await request.query(query);
+      logger.info('Found results in the recent receipts query', result.recordset.length);
       return result.recordset || [];
     } catch (error) {
       logger.error('Error fetching recent receipts from QuickBill:', error);
@@ -137,12 +129,63 @@ where VchHdrGUID = '${invoiceId}';`;
         request.input('invoiceId', sql.VarChar, invoiceId.toString());
       }
       logger.info('QuickBill item for invoice:', invoiceId);
-      logger.info('QuickBill item query:', itemQuery);
       const result = await request.query(itemQuery);
-      logger.info('QuickBill item result:', result.recordset);
+      logger.info('Found results in the item query', result.recordset.length);
       return result.recordset;
     } catch (error) {
       logger.error('Error fetching recent receipts from QuickBill:', error);
+      throw error;
+    }
+  }
+
+  static async getReceiptByReceiptNo(pool, receiptNo) {
+    try {
+      const normalizedReceiptNo =
+        receiptNo !== null && receiptNo !== undefined && String(receiptNo).trim() !== ''
+          ? String(receiptNo).trim()
+          : null;
+      logger.info('Receipt number:', normalizedReceiptNo);
+      if (!normalizedReceiptNo) {
+        throw new Error('Receipt number is required');
+      }
+  
+      const query = `
+        SELECT
+          qbvoucherheader.QBGUID AS GUID,
+          qbvoucherheader.voucherno AS receiptNo,
+          qbvoucherheader.DateInsert AS date,
+          qbvoucherheader.vchnetamount AS totalAmount,
+          qbledger.LedgerName AS fullName,
+          qbmailingaddres.MobileNo AS mobileNumber,
+          payModes.PayModeName AS method,
+          tenderDetails.ReceiptAmt AS amount,
+          NULL AS CreatedBy
+        FROM QbVoucherHeader AS qbvoucherheader WITH (NOLOCK)
+        JOIN QbLedger AS qbledger WITH (NOLOCK)
+          ON qbledger.QBGUID = qbvoucherheader.PartyGUID
+        JOIN QbMaillingAddress AS qbmailingaddres WITH (NOLOCK)
+          ON qbledger.QBGUID = qbmailingaddres.LinkGUID
+        JOIN QbTenderDetails AS tenderDetails WITH (NOLOCK)
+          ON tenderDetails.VchHdrGUID = qbvoucherheader.QBGUID
+        JOIN QbPayModes AS payModes WITH (NOLOCK)
+          ON payModes.QBGUID = tenderDetails.PayModeGuid
+        WHERE qbvoucherheader.voucherno = @receiptNo
+      `;
+  
+      const request = pool.request();
+      request.input('receiptNo', sql.VarChar(50), normalizedReceiptNo);
+  
+      const result = await request.query(query);
+      
+      if (result.recordset && result.recordset.length > 0) {
+        logger.info(`Found receipt details for receiptNo: ${normalizedReceiptNo}`);
+        return result.recordset; // Return single receipt object
+      } else {
+        logger.info(`No receipt found for receiptNo: ${normalizedReceiptNo}`);
+        return [];
+      }
+    } catch (error) {
+      logger.error(`Error fetching receipt details for receiptNo ${receiptNo}:`, error);
       throw error;
     }
   }
