@@ -17,7 +17,7 @@ class SyncService {
     this.lastSyncTime = this.store.get('lastSyncTime', null);
     this.lastSyncedReceiptDate = this.store.get('lastSyncedReceiptDate', null);
     this.lastSyncedReceiptNo = this.store.get('lastSyncedReceiptNo', null);
-    this.lastReceiptOnServer = null; // Will be fetched on demand
+    this.lastReceiptOnServer = this.store.get('lastReceiptOnServer', null);; // Will be fetched on demand
     this.syncQueue = {}; // In-memory queue for receipts to be synced
     this.failedQueue = {}; // In-memory queue for failed receipts (separate from persisted)
     this.syncStats = {
@@ -76,8 +76,40 @@ class SyncService {
         await this.retryFailedReceipts();
       }
 
-      // Get recent receipts from SQL Server (only receipts after lastSyncedReceiptDate)
-      const receipts = await sqlConnector.getRecentReceipts(config.sync.batchSize);
+      // Get the most recent receipt number from server
+      let lastReceiptOnServer = null;
+      try {
+        
+        const data = await this.getLastReceiptOnServer();
+        if (data) {
+          lastReceiptOnServer = data;
+          logger.info(`Found most recent receipt on server: ${lastReceiptOnServer}`);
+          
+          // Store in global storage
+          this.store.set('lastReceiptOnServer', lastReceiptOnServer);
+        } else {
+          logger.debug('No receipt number found in API response');
+        }
+      } catch (error) {
+        logger.warn('Failed to fetch recent receipt from server:', error.message);
+      }
+
+      // If no receipt found from API, try to get from storage
+      if (!lastReceiptOnServer) {
+        lastReceiptOnServer = this.store.get('lastReceiptOnServer');
+        
+        if (lastReceiptOnServer) {
+          logger.info(`Using lastReceiptOnServer from storage: ${lastReceiptOnServer}`);
+        } else {
+          logger.warn('No lastReceiptOnServer found in storage or from API. Skipping sync to prevent full database scan.');
+          this.trayManager.updateStatus('idle');
+          this.isSyncing = false;
+          return;
+        }
+      }
+
+      // Get recent receipts from SQL Server (only receipts after lastReceiptOnServer)
+      const receipts = await sqlConnector.getRecentReceipts(lastReceiptOnServer);
 
       if (receipts.length === 0) {
         logger.info('No receipts found to sync');
@@ -86,8 +118,21 @@ class SyncService {
         return;
       }
 
-      const groupedReceipts = _.groupBy(receipts, 'receiptNo');
-      logger.info(`Found ${Object.keys(groupedReceipts).length} receipts to process`);
+      logger.info(`Fetched ${receipts.length} receipts from SQL`);
+
+      // Filter receipts based on validation rules
+      const filteredReceipts = await this.filterReceipts(receipts);
+
+      if (filteredReceipts.length === 0) {
+        logger.info('No valid receipts found after filtering');
+        this.trayManager.updateStatus('idle');
+        this.isSyncing = false;
+        return;
+      }
+
+      const groupedReceipts = _.groupBy(filteredReceipts, 'receiptNo');
+      logger.info(`Found ${Object.keys(groupedReceipts).length} valid receipts to process`);
+      
       // Add receipts to in-memory sync queue
       this.syncQueue = groupedReceipts;
 
@@ -121,6 +166,78 @@ class SyncService {
       this.isSyncing = false;
       // Clear sync queue after processing
       this.syncQueue = {};
+    }
+  }
+
+  async filterReceipts(receipts) {
+    const validPrefixes = ['ANN/S/', 'AMB/S/', 'PMC/S/', 'TTK/S/', 'TNJ/S/'];
+    const cutoffDate = new Date('2026-01-01T00:00:00.000Z');
+    const filteredReceipts = [];
+    
+    logger.info(`Starting receipt filtering for ${receipts.length} receipts...`);
+
+    for (const receipt of receipts) {
+      const receiptNo = receipt.receiptNo;
+      const receiptDate = new Date(receipt.date);
+
+      // Check 1: Validate receipt number format
+      const hasValidPrefix = validPrefixes.some(prefix => receiptNo.startsWith(prefix));
+      
+      if (!hasValidPrefix) {
+        logger.warn(`Rejected receipt ${receiptNo}: Invalid prefix. Must start with one of: ${validPrefixes.join(', ')}`);
+        continue;
+      }
+
+      // Check 2: Validate receipt date
+      if (receiptDate < cutoffDate) {
+        logger.warn(`Rejected receipt ${receiptNo}: Date ${receipt.date} is before cutoff date 01-01-2026`);
+        continue;
+      }
+
+      // Check 3: Check if receipt already exists on server
+      try {
+        const existsOnServer = await this.checkReceiptExists(receiptNo);
+        
+        if (existsOnServer) {
+          logger.info(`Skipping receipt ${receiptNo}: Already exists on server`);
+          this.store.set('lastSyncedReceiptNo', receiptNo);
+          this.store.set('lastReceiptOnServer', receiptNo);
+          continue;
+        }
+      } catch (error) {
+        logger.error(`Error checking if receipt ${receiptNo} exists on server:`, error);
+        // Optionally, you can choose to skip this receipt or continue with processing
+        // For safety, we'll skip it
+        logger.warn(`Skipping receipt ${receiptNo} due to server check error`);
+        continue;
+      }
+
+      // All checks passed
+      filteredReceipts.push(receipt);
+    }
+
+    logger.info(`Filtering complete: ${filteredReceipts.length} out of ${receipts.length} receipts passed validation`);
+    
+    return filteredReceipts;
+  }
+
+  async checkReceiptExists(receiptNo) {
+    try {
+      const response = await axios.get(`${config.receiptApi.baseUrl}/api/Receipts/check`, {
+        params: { receiptNo },
+        headers: {
+          'blz-api-key': config.receiptApi.apiKey
+        },
+        timeout: 10000 // 5 second timeout
+      });
+
+      return response.data.success;
+    } catch (error) {
+      // If it's a 404, the receipt doesn't exist
+      if (error.response && error.response.status === 404) {
+        return false;
+      }
+      throw error;
     }
   }
 
@@ -352,7 +469,7 @@ class SyncService {
     return {
       receiptDetails: {
         receiptNo: receipt.receiptNo,
-        date: moment(receipt.date).subtract(330, 'minutes').toISOString(),
+        date: moment(receipt.date).toISOString(),
         typeOfOrder: 'In-Store',
         invoiceType: 'Sales'
       },
@@ -439,15 +556,12 @@ class SyncService {
   }
 
   async getStats() {
-    // Fetch last receipt on server
-    const lastReceiptOnServer = await this.getLastReceiptOnServer();
-
     return {
       ...this.syncStats,
       lastSyncTime: this.lastSyncTime,
       lastSyncedReceiptDate: this.lastSyncedReceiptDate,
       lastSyncedReceiptNo: this.lastSyncedReceiptNo,
-      lastReceiptOnServer: lastReceiptOnServer,
+      lastReceiptOnServer: this.lastReceiptOnServer,
       isSyncing: this.isSyncing,
       queueSize: Object.keys(this.syncQueue).length,
       failedCount: Object.keys(this.failedQueue).length
@@ -457,6 +571,100 @@ class SyncService {
   async forceSyncNow() {
     logger.info('Manual sync triggered');
     await this.runSync();
+  }
+
+  async forceManualSync(receiptNo) {
+    try{
+    logger.info(`Manual sync triggered for receipt: ${receiptNo}`);
+    const { success, message } = await this.runSingleReceiptSync(receiptNo);
+    return { success , message };
+  } catch (error) {
+      logger.error('Failed to trigger manual sync:', error);
+      return { success: false, error: error.message };
+    }
+  }
+  
+  async runSingleReceiptSync(receiptNo) {
+    if (this.isSyncing) {
+      logger.info('Sync already in progress, skipping...');
+      return { success: false, message: 'Sync already in progress, skipping...' };
+    }
+
+    this.isSyncing = true;
+    this.trayManager.updateStatus('syncing');
+
+    try {
+      logger.info('Starting receipt sync...');
+      let receipts;
+      if(receiptNo){
+       const receiptExistsAlready = await this.checkReceiptExists(receiptNo);
+       if(receiptExistsAlready){
+        logger.info(`Receipt ${receiptNo} already exists on server, skipping...`);
+        this.trayManager.updateStatus('idle');
+        this.isSyncing = false;
+        return { success: false, message: 'Receipt already exists on server, skipping...' };
+       }
+       receipts = await sqlConnector.getSingleReceipt(receiptNo);
+      }else{
+        logger.info("No receiptNo found to sync");
+      }
+      if (receipts.length === 0) {
+        logger.info('No receipts found to sync');
+        this.trayManager.updateStatus('idle');
+        this.isSyncing = false;
+        return { success: false, message: 'No receipts found to sync' };
+      }
+
+      logger.info(`Fetched ${receipts.length} receipts from SQL`);
+
+      // Filter receipts based on validation rules
+      const filteredReceipts = await this.filterReceipts(receipts);
+
+      if (filteredReceipts.length === 0) {
+        logger.info('No valid receipts found after filtering');
+        this.trayManager.updateStatus('idle');
+        this.isSyncing = false;
+        return { success: false, message: 'No valid receipts found after filtering' };
+      }
+
+      const groupedReceipts = _.groupBy(filteredReceipts, 'receiptNo');
+      logger.info(`Found ${Object.keys(groupedReceipts).length} valid receipts to process`);
+      
+      // Add receipts to in-memory sync queue
+      this.syncQueue = groupedReceipts;
+
+      // Process receipts from queue
+      const results = await this.processReceipts();
+
+      // Update statistics
+      this.syncStats.totalSynced += results.succeeded;
+      this.syncStats.totalFailed += results.failed;
+      this.lastSyncTime = new Date().toISOString();
+
+      // Persist stats
+      this.store.set('totalSynced', this.syncStats.totalSynced);
+      this.store.set('totalFailed', this.syncStats.totalFailed);
+      this.store.set('lastSyncTime', this.lastSyncTime);
+      this.store.set('lastSyncedReceiptDate', this.lastSyncedReceiptDate);
+      this.store.set('lastSyncedReceiptNo', this.lastSyncedReceiptNo);
+
+      logger.info(`Sync completed - Success: ${results.succeeded}, Failed: ${results.failed}`);
+
+      this.trayManager.updateStatus('idle');
+      this.trayManager.updateTooltip(
+        `Last sync: ${moment(this.lastSyncTime).format('HH:mm:ss')}\n` + `Total synced: ${this.syncStats.totalSynced}`
+      );
+      return { success: true, message: `Sync completed successfully for receipt: ${receiptNo}` };
+    } catch (error) {
+      logger.error('Sync error:', error);
+      this.syncStats.lastError = error.message;
+      this.trayManager.updateStatus('error');
+      this.trayManager.updateTooltip(`Sync error: ${error.message}`);
+    } finally {
+      this.isSyncing = false;
+      // Clear sync queue after processing
+      this.syncQueue = {};
+    }
   }
 }
 
