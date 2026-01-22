@@ -53,7 +53,7 @@ class SQLConnector {
     }
   }
 
-  async getRecentReceipts(limit = 50, sinceDate = null) {
+  async getRecentReceipts(receiptNo = null) {
     try {
       const pool = await this.connect();
       const posType = this.getPosType();
@@ -68,42 +68,26 @@ class SQLConnector {
       if (posType === 'QUICKBILL') {
         logger.debug('Using QuickBill-specific queries');
 
-        // Get the most recent receipt number from server
-        let receiptNo = null;
-        try {
-          const axios = require('axios');
-          const { data } = await axios.get(`${config.validationApi.baseUrl}/api/Receipts/recent`, {
-            headers: {
-              'blz-api-key': config.validationApi.apiKey
-            },
-            timeout: config.validationApi.timeout
-          });
-          if (data) {
-            receiptNo = data.receiptDetails.receiptNo;
-
-            if (receiptNo) {
-              logger.debug(`Found most recent receipt on server: ${receiptNo}`);
-            } else {
-              logger.debug('No receipt number found in API response, syncing all recent receipts');
-            }
-          }
-        } catch (error) {
-          logger.warn('Failed to fetch recent receipt from server, syncing all recent receipts:', error.message);
+        // If no receiptNo provided, return empty array to prevent full DB scan
+        if (!receiptNo) {
+          logger.warn('No receiptNo provided for QuickBill query - skipping to prevent full database scan');
+          return [];
         }
 
-        return await QuickBillQueries.getRecentReceipts(pool, limit, sinceDate, receiptNo);
+        return await QuickBillQueries.getRecentReceipts(pool, receiptNo);
       }
 
       // Generic query for other POS systems
       logger.debug('Using generic queries');
 
-      // Default to last 24 hours if no sinceDate provided
-      const dateFilter = sinceDate
-        ? `SalesInvoice.Date > @sinceDate`
-        : `SalesInvoice.Date >= DATEADD(hour, -24, GETDATE())`;
+      // If no receiptNo provided, return empty array
+      if (!receiptNo) {
+        logger.warn('No receiptNo provided for generic query - skipping to prevent full database scan');
+        return [];
+      }
 
       const query = `
-        SELECT TOP ${limit}
+        SELECT
           SalesInvoice.Id as InvoiceId,
           SalesInvoice.InvNumber as BillNumber,
           SalesInvoice.Date as InvoiceDate,
@@ -122,19 +106,38 @@ class SQLConnector {
           ON adcont.AddressId = CustomerAddress.AddressId
         LEFT JOIN tbl_DYN_Contacts as Contact WITH (NOLOCK)
           ON Contact.id = adcont.ContactId
-        WHERE ${dateFilter}
-        ORDER BY SalesInvoice.Date ASC
+        WHERE SalesInvoice.InvNumber > @receiptNo
+        ORDER BY SalesInvoice.InvNumber ASC
       `;
 
       const request = pool.request();
-      if (sinceDate) {
-        request.input('sinceDate', sql.DateTime, new Date(sinceDate));
-      }
+      request.input('receiptNo', sql.VarChar(50), receiptNo);
 
       const result = await request.query(query);
       return result.recordset;
     } catch (error) {
       logger.error('Error fetching recent receipts:', error);
+      throw error;
+    }
+  }
+
+  async getSingleReceipt(receiptNo){
+    const pool = await this.connect();
+    const posType = this.getPosType();
+    try{
+    if (posType === 'QUICKBILL') {
+      logger.debug('Using QuickBill-specific queries');
+
+      // If no receiptNo provided, return empty array to prevent full DB scan
+      if (!receiptNo) {
+        logger.warn('No receiptNo provided for QuickBill query - skipping to prevent full database scan');
+        return [];
+      }
+
+      return await QuickBillQueries.getReceiptByReceiptNo(pool, receiptNo);
+    }
+    } catch (error) {
+      logger.error('Error fetching single receipt:', error);
       throw error;
     }
   }
