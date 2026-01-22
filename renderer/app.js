@@ -53,6 +53,7 @@ function setupEventListeners() {
   document.getElementById('customerMobile').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') handleCustomerSearch();
   });
+  document.getElementById('clearCustomerField').addEventListener('click', handleClearCustomerField);
 
   // Coupon validation
   document.getElementById('validateCoupon').addEventListener('click', handleCouponValidation);
@@ -62,6 +63,8 @@ function setupEventListeners() {
   document.getElementById('couponCode').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') handleCouponValidation();
   });
+  document.getElementById('cancelValidateCoupon').addEventListener('click', handleCancelValidateCoupon);
+  document.getElementById('cancelRedeemCoupon').addEventListener('click', handleCancelRedeemCoupon);
 
   // Loyalty points
   document.getElementById('checkLoyalty').addEventListener('click', handleLoyaltyCheck);
@@ -69,10 +72,15 @@ function setupEventListeners() {
   document.getElementById('loyaltyMobile').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') handleLoyaltyCheck();
   });
+  document.getElementById('clearLoyaltyField').addEventListener('click', handleClearLoyaltyField);
+  document.getElementById('cancelLoyaltyRedemption').addEventListener('click', handleCancelLoyaltyRedemption);
 
   // Sync controls
   document.getElementById('refreshSync').addEventListener('click', updateSyncStatus);
   document.getElementById('forceSyncNow').addEventListener('click', handleForceSync);
+  document.getElementById('syncManualReceipt').addEventListener('click', handleManualReceiptSync);
+  document.getElementById('clearManualReceipt').addEventListener('click', handleClearManualReceipt);
+
 
   // Auto-start controls
   document.getElementById('toggleAutoStart').addEventListener('click', handleToggleAutoStart);
@@ -132,6 +140,11 @@ async function handleCustomerSearch() {
   }
 }
 
+function handleClearCustomerField() {
+  document.getElementById('customerMobile').value = '';
+  hideElement('customerResult');
+}
+
 function displayCustomerProfile(data) {
   document.getElementById('custName').textContent = data.fullName || '-';
   document.getElementById('custMobile').textContent = data.mobileNumber || '-';
@@ -169,14 +182,14 @@ async function handleCouponValidation() {
     const result = await window.electronAPI.validateCoupon(couponCode, mobile || null, purchaseAmount);
     if (result.success) {
       if (result.data.requireOtpValidation) {
-        showOTPContainer();
+        showElement('sendOtpCoupon');
       } else {
-        displayRedeemButton();
+        showElement('redeemCouponGroup');
       }
       showMessage(result.data.message, 'success');
     } else {
-      showMessage(result.error || 'Invalid coupon', 'error');
-      hideElement('redeemCouponBtn');
+      showMessage(result.data.message || 'Failed to validate coupon', 'error');
+      hideElement('redeemCouponGroup');
     }
   } catch (error) {
     showMessage('Error validating coupon', 'error');
@@ -227,14 +240,6 @@ async function handleSendOtpCoupon() {
   }
 }
 
-function displayRedeemButton() {
-  showElement('redeemCouponGroup');
-}
-
-function showOTPContainer() {
-  showElement('sendOtpCoupon');
-}
-
 function showValidateOtpContainer() {
   showElement('otpValidationGroup');
 }
@@ -267,29 +272,47 @@ async function handleValidateCouponOtp() {
     const result = await window.electronAPI.validateOtpCoupon(couponCode, mobile || null, otp, storedReferenceNumber);
     if (result.success) {
       showMessage(result.data.message || 'OTP validated successfully', 'success');
-      displayRedeemButton();
+      showElement('redeemCouponGroup');
       document.getElementById('couponOtp').value = '';
       hideElement('otpValidationGroup');
       hideElement('sendOtpCoupon');
     } else {
       showMessage(result.error || 'OTP validation failed', 'error');
-      hideElement('otpValidationGroup');
-      hideElement('sendOtpCoupon');
+      handleCancelValidateCoupon();
     }
   } catch (error) {
     showMessage('Error validating OTP', 'error');
-    console.error(error);
+    handleCancelValidateCoupon();
   } finally {
     button.classList.remove('loading');
     button.textContent = 'Validate OTP';
   }
 }
 
+function handleCancelValidateCoupon() {
+  document.getElementById('couponCode').value = '';
+  document.getElementById('couponMobile').value = '';
+  document.getElementById('purchaseAmount').value = '';
+  document.getElementById('couponReceiptNo').value = '';
+  document.getElementById('couponOtp').value = '';
+  hideElement('sendOtpCoupon');
+  hideElement('redeemCouponGroup');
+}
+
+function handleCancelRedeemCoupon() {
+  document.getElementById('couponCode').value = '';
+  document.getElementById('couponMobile').value = '';
+  document.getElementById('purchaseAmount').value = '';
+  document.getElementById('couponReceiptNo').value = '';
+  hideElement('redeemCouponGroup');
+  document.getElementById('couponOtp').value = '';
+}
+
 async function handleRedeemCoupon() {
   const couponCode = document.getElementById('couponCode').value.trim().toUpperCase();
   const mobile = document.getElementById('couponMobile').value.trim();
   const purchaseAmount = document.getElementById('purchaseAmount').value.trim();
-  const receiptNo = document.getElementById('receiptNo').value.trim();
+  const receiptNo = document.getElementById('couponReceiptNo').value.trim();
 
   if (!couponCode) {
     showMessage('Please enter a coupon code', 'error');
@@ -315,17 +338,13 @@ async function handleRedeemCoupon() {
     } else {
       showMessage(result.error || 'Failed to redeem coupon', 'error');
     }
-    document.getElementById('couponCode').value = '';
-    document.getElementById('couponMobile').value = '';
-    document.getElementById('purchaseAmount').value = '';
-    document.getElementById('receiptNo').value = '';
-    hideElement('redeemCouponGroup');
   } catch (error) {
     showMessage('Error redeeming coupon', 'error');
     console.error(error);
   } finally {
     button.classList.remove('loading');
     button.textContent = 'Redeem Coupon';
+    handleCancelRedeemCoupon();
   }
 }
 // Loyalty Check
@@ -348,21 +367,20 @@ async function handleLoyaltyCheck() {
       displayLoyaltyInfo(result.data);
       showMessage(result.data.message, 'success');
     } else {
-      showMessage(result.error || 'No loyalty information found', 'error');
-      hideElement('loyaltyResult');
+      showMessage(result.message || 'No loyalty information found', 'error');
+      handleClearLoyaltyField();
     }
   } catch (error) {
     showMessage('Error fetching loyalty information', 'error');
-    console.error(error);
   } finally {
     button.classList.remove('loading');
-    button.textContent = 'Check Loyalty Points';
+    button.textContent = 'Check Points';
   }
 }
 
 async function handleLoyaltyRedemption() {
   const mobile = document.getElementById('loyaltyMobile').value.trim();
-  const receiptNo = document.getElementById('receiptNo').value.trim();
+  const receiptNo = document.getElementById('loyaltyReceiptNo').value.trim();
   const points = document.getElementById('loyalPoints').value.trim();
 
   if (!validateMobile(mobile)) {
@@ -386,17 +404,10 @@ async function handleLoyaltyRedemption() {
     }
   } catch (error) {
     showMessage('Error redeeming loyalty points', 'error');
-    console.error(error);
   } finally {
     button.classList.remove('loading');
     button.textContent = 'Redeem Points';
-    hideElement('loyaltyRedeem');
-    hideElement('loyaltyResult');
-    // Clear input fields by value property
-    document.getElementById('loyaltyMobile').value = '';
-    document.getElementById('billAmount').value = '';
-    document.getElementById('receiptNo').value = '';
-    document.getElementById('loyalPoints').value = '';
+    handleCancelLoyaltyRedemption();
   }
 }
 
@@ -405,6 +416,26 @@ function displayLoyaltyInfo(data) {
   showElement('loyaltyRedeem');
   showElement('loyaltyResult');
 }
+
+function handleClearLoyaltyField() {
+  document.getElementById('loyaltyMobile').value = '';
+  document.getElementById('billAmount').value = '';
+  document.getElementById('loyaltyReceiptNo').value = '';
+  document.getElementById('loyalPoints').value = '';
+  hideElement('loyaltyRedeem');
+  hideElement('loyaltyResult');
+}
+
+function handleCancelLoyaltyRedemption() {
+  document.getElementById('loyaltyMobile').value = '';
+  document.getElementById('billAmount').value = '';
+  document.getElementById('loyaltyReceiptNo').value = '';
+  document.getElementById('loyalPoints').value = '';
+  hideElement('loyaltyRedeem');
+  hideElement('loyaltyResult');
+}
+
+
 
 // Sync Status
 async function updateSyncStatus() {
@@ -426,6 +457,10 @@ async function updateSyncStatus() {
   } catch (error) {
     console.error('Error updating sync status:', error);
   }
+}
+
+function handleClearManualReceipt() {
+  document.getElementById('manualReceiptNo').value = '';
 }
 
 function displaySyncStats(stats) {
@@ -475,6 +510,30 @@ async function handleForceSync() {
   } finally {
     button.classList.remove('loading');
     button.textContent = 'Sync Now';
+  }
+}
+
+async function handleManualReceiptSync() {
+  const receiptNo = document.getElementById('manualReceiptNo').value.trim();
+  const button = document.getElementById('syncManualReceipt');
+  button.classList.add('loading');
+  button.textContent = 'Syncing...';
+
+  try {
+    const result = await window.electronAPI.triggerManualReceiptSync(receiptNo);
+
+    if (result.success) {
+      showMessage(result.message, 'success');
+      setTimeout(updateSyncStatus, 2000);
+    } else {
+      showMessage(result.message, 'error');
+    }
+  } catch (error) {
+    showMessage('Error triggering sync', 'error');
+  } finally {
+    button.classList.remove('loading');
+    button.textContent = 'Sync Now';
+    handleClearManualReceipt();
   }
 }
 
