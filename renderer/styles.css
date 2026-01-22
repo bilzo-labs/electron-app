@@ -388,3 +388,84 @@ body {
   gap: 10px;
   flex-wrap: wrap;
 }
+
+.button-container{
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.btn-cancel{
+  background-color: #f26b5c;
+  color: white;
+}
+
+.manual-sync-section {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 2px solid #e0e0e0;
+}
+
+.manual-sync-section h4 {
+  margin: 0 0 15px 0;
+  font-size: 1.1em;
+  color: #333;
+  font-weight: 600;
+}
+
+.manual-sync-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.manual-sync-controls .form-group {
+  margin: 0;
+}
+
+.manual-sync-controls .form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+  color: #555;
+  font-size: 0.95em;
+}
+
+.receipt-input {
+  width: 100%;
+  padding: 12px 15px;
+  border: 2px solid #ddd;
+  border-radius: 6px;
+  font-size: 1em;
+  transition: all 0.3s ease;
+  box-sizing: border-box;
+}
+
+.receipt-input:focus {
+  outline: none;
+  border-color: #4CAF50;
+  box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.1);
+}
+
+.receipt-input::placeholder {
+  color: #999;
+  font-size: 0.95em;
+}
+
+.manual-sync-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.manual-sync-buttons .btn {
+  flex: 1;
+  min-width: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 20px;
+  font-size: 0.95em;
+  font-weight: 500;
+}
