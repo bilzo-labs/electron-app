@@ -335,6 +335,14 @@ if (!gotTheLock) {
     return { success: false, error: 'Sync service not available' };
   });
 
+  ipcMain.handle('trigger-manual-receipt-sync', async (event, receiptNo) => {
+    if (syncService){
+      const { success, message } =  await syncService.forceManualSync(receiptNo);
+      return { success, message };
+    }
+    return { success: false, error: 'Sync service not available' };
+  })
+
   ipcMain.handle('validate-coupon', async (event, couponCode, mobileNumber, purchaseAmount) => {
     try {
       const axios = require('axios');
@@ -349,7 +357,7 @@ if (!gotTheLock) {
           timeout: config.validationApi.timeout
         }
       );
-      return { success: true, data: response.data };
+      return { success: response.data.success, data: response.data };
     } catch (error) {
       return {
         success: false,
@@ -445,7 +453,7 @@ if (!gotTheLock) {
           timeout: config.validationApi.timeout
         }
       );
-      return { success: true, data: response.data };
+      return { success: response.data.success, data: response.data };
     } catch (error) {
       return {
         success: false,
