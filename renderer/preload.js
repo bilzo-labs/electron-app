@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Sync operations
   getSyncStats: () => ipcRenderer.invoke('get-sync-stats'),
   triggerSync: () => ipcRenderer.invoke('trigger-sync'),
+  triggerManualReceiptSync: (receiptNo) => ipcRenderer.invoke('trigger-manual-receipt-sync', receiptNo),
 
   // Validation operations
   validateCoupon: (couponCode, mobile, purchaseAmount) =>
