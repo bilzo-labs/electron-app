@@ -43,7 +43,10 @@
               pattern="[0-9]{10}"
             />
           </div>
-          <button class="btn btn-primary" id="searchCustomer">Search Customer</button>
+          <div class="button-container">
+            <button class="btn btn-cancel" id="clearCustomerField">Clear</button>
+            <button class="btn btn-primary" id="searchCustomer">Search Customer</button>
+          </div>
 
           <div class="result-container" id="customerResult" style="display: none">
             <h3>Customer Profile</h3>
@@ -82,7 +85,10 @@
             <label for="purchaseAmount">Purchase Amount</label>
             <input type="number" id="purchaseAmount" placeholder="Enter purchase amount" />
           </div>
-          <button class="btn btn-primary" id="validateCoupon">Validate Coupon</button>
+          <div class="button-container">
+            <button class="btn btn-cancel" id="cancelValidateCoupon">Clear</button>
+            <button class="btn btn-primary" id="validateCoupon">Validate Coupon</button>
+          </div>
 
           <div class="result-container" id="couponResult" style="display: none">
             <!-- Results populated by JS -->
@@ -102,10 +108,13 @@
             <!-- Redeem Coupon Button -->
              <div style="display: none;" id="redeemCouponGroup">
               <div class="form-group">
-                <label for="receiptNo">Enter Receipt No</label>
-                <input type="text" id="receiptNo" placeholder="Enter Receipt No"  />
+                <label for="couponReceiptNo">Enter Receipt No</label>
+                <input type="text" id="couponReceiptNo" placeholder="Enter Receipt No"  />
               </div>
-              <button class="btn btn-primary" id="redeemCouponBtn">Redeem Coupon</button>
+              <div class="button-container">
+                <button class="btn btn-cancel" id="cancelRedeemCoupon">Cancel</button>
+                <button class="btn btn-primary" id="redeemCouponBtn">Redeem Coupon</button>
+              </div>
              </div>
           </div>
         </section>
@@ -118,7 +127,11 @@
             <label for="billAmount">Bill Amount</label>
             <input id="billAmount" placeholder="Enter bill amount" />
           </div>
-          <button class="btn btn-primary" id="checkLoyalty">Check Loyalty Points</button>
+          <div class="button-container">
+            <button class="btn btn-cancel" id="clearLoyaltyField">Clear</button>
+            <button class="btn btn-primary" id="checkLoyalty">Check Points</button>
+          </div>
+          
 
           <div class="result-container" id="loyaltyResult" style="display: none">
             <h3>Loyalty Information</h3>
@@ -132,12 +145,15 @@
           <div class="redemption-container" id="loyaltyRedeem" style="display: none">
             <h3>Redeem Points</h3>
             <div class="form-group">
-              <label for="receiptNo">Bill No.</label>
-              <input id="receiptNo" placeholder="Enter receipt number" />
+              <label for="loyaltyReceiptNo">Bill No.</label>
+              <input id="loyaltyReceiptNo" placeholder="Enter receipt number" />
               <label for="loyaltyPoints">Points to redeem</label>
               <input id="loyalPoints" placeholder="Enter loyalty points for redemption" />
             </div>
-            <button class="btn btn-primary" id="loyaltyRedemption">Redeem Points</button>
+            <div class="button-container">
+              <button class="btn btn-cancel" id="cancelLoyaltyRedemption">Cancel</button>
+              <button class="btn btn-primary" id="loyaltyRedemption">Redeem Points</button>
+            </div>
           </div>
         </section>
 
@@ -178,6 +194,30 @@
               <div class="info-item">
                 <span class="label">SQL Connection:</span>
                 <span class="value" id="sqlStatus">-</span>
+              </div>
+            </div>
+          
+            <!-- Manual Receipt Sync Section -->
+            <div class="manual-sync-section">
+              <h4>Manual Receipt Sync</h4>
+              <div class="manual-sync-controls">
+                <div class="form-group">
+                  <label for="manualReceiptNo">Receipt Number</label>
+                  <input 
+                    type="text" 
+                    id="manualReceiptNo" 
+                    placeholder="Enter receipt number (e.g., ANN/S/25/1000)" 
+                    class="receipt-input"
+                  />
+                </div>
+                <div class="manual-sync-buttons">
+                  <button class="btn btn-primary" id="syncManualReceipt">
+                    Sync Receipt
+                  </button>
+                  <button class="btn btn-cancel" id="clearManualReceipt">
+                  Clear
+                  </button>
+                </div>
               </div>
             </div>
           </div>
