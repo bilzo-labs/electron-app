@@ -1,6 +1,6 @@
 {
   "name": "receipt-sync-electron-app",
-  "version": "5.3.1",
+  "version": "5.4.0",
   "description": "Windows Taskbar Electron App for Receipt Sync & Customer Validation",
   "main": "main/index.js",
   "scripts": {
