@@ -400,7 +400,6 @@ async function handleLoyaltyRedemption() {
       showMessage('Loyalty redemption successful', 'success');
     } else {
       showMessage(result.error || 'Loyalty redemption failed', 'error');
-      hideElement('loyaltyRedemption');
     }
   } catch (error) {
     showMessage('Error redeeming loyalty points', 'error');

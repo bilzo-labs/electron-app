@@ -85,8 +85,9 @@ class SyncService {
           lastReceiptOnServer = data;
           logger.info(`Found most recent receipt on server: ${lastReceiptOnServer}`);
           
-          // Store in global storage
+          // Store in global storage and update instance variable
           this.store.set('lastReceiptOnServer', lastReceiptOnServer);
+          this.lastReceiptOnServer = lastReceiptOnServer;
         } else {
           logger.debug('No receipt number found in API response');
         }
@@ -100,6 +101,8 @@ class SyncService {
         
         if (lastReceiptOnServer) {
           logger.info(`Using lastReceiptOnServer from storage: ${lastReceiptOnServer}`);
+          // Update instance variable
+          this.lastReceiptOnServer = lastReceiptOnServer;
         } else {
           logger.warn('No lastReceiptOnServer found in storage or from API. Skipping sync to prevent full database scan.');
           this.trayManager.updateStatus('idle');
@@ -150,6 +153,11 @@ class SyncService {
       this.store.set('lastSyncTime', this.lastSyncTime);
       this.store.set('lastSyncedReceiptDate', this.lastSyncedReceiptDate);
       this.store.set('lastSyncedReceiptNo', this.lastSyncedReceiptNo);
+      // Update lastReceiptOnServer in store to match lastSyncedReceiptNo
+      if (this.lastSyncedReceiptNo) {
+        this.store.set('lastReceiptOnServer', this.lastSyncedReceiptNo);
+        this.lastReceiptOnServer = this.lastSyncedReceiptNo;
+      }
 
       logger.info(`Sync completed - Success: ${results.succeeded}, Failed: ${results.failed}`);
 
@@ -200,6 +208,8 @@ class SyncService {
         
         if (existsOnServer) {
           logger.info(`Skipping receipt ${receiptNo}: Already exists on server`);
+          this.lastSyncedReceiptNo = receiptNo;
+          this.lastReceiptOnServer = receiptNo;
           this.store.set('lastSyncedReceiptNo', receiptNo);
           this.store.set('lastReceiptOnServer', receiptNo);
           continue;
@@ -281,6 +291,8 @@ class SyncService {
           if (!this.lastSyncedReceiptDate || receiptDate > new Date(this.lastSyncedReceiptDate)) {
             this.lastSyncedReceiptDate = receiptDate.toISOString();
             this.lastSyncedReceiptNo = receiptNo;
+            // Update lastReceiptOnServer to match lastSyncedReceiptNo
+            this.lastReceiptOnServer = receiptNo;
           }
         }
         delete this.syncQueue[receiptNo];
@@ -296,6 +308,8 @@ class SyncService {
             if (!this.lastSyncedReceiptDate || receiptDate > new Date(this.lastSyncedReceiptDate)) {
               this.lastSyncedReceiptDate = receiptDate.toISOString();
               this.lastSyncedReceiptNo = receiptNo;
+              // Update lastReceiptOnServer to match lastSyncedReceiptNo
+              this.lastReceiptOnServer = receiptNo;
             }
           }
 
@@ -368,6 +382,8 @@ class SyncService {
           if (!this.lastSyncedReceiptDate || receiptDate > new Date(this.lastSyncedReceiptDate)) {
             this.lastSyncedReceiptDate = receiptDate.toISOString();
             this.lastSyncedReceiptNo = receiptNo;
+            // Update lastReceiptOnServer to match lastSyncedReceiptNo
+            this.lastReceiptOnServer = receiptNo;
           }
         }
 
@@ -385,6 +401,8 @@ class SyncService {
             if (!this.lastSyncedReceiptDate || receiptDate > new Date(this.lastSyncedReceiptDate)) {
               this.lastSyncedReceiptDate = receiptDate.toISOString();
               this.lastSyncedReceiptNo = receiptNo;
+              // Update lastReceiptOnServer to match lastSyncedReceiptNo
+              this.lastReceiptOnServer = receiptNo;
             }
           }
           continue;
@@ -647,6 +665,11 @@ class SyncService {
       this.store.set('lastSyncTime', this.lastSyncTime);
       this.store.set('lastSyncedReceiptDate', this.lastSyncedReceiptDate);
       this.store.set('lastSyncedReceiptNo', this.lastSyncedReceiptNo);
+      // Update lastReceiptOnServer in store to match lastSyncedReceiptNo
+      if (this.lastSyncedReceiptNo) {
+        this.store.set('lastReceiptOnServer', this.lastSyncedReceiptNo);
+        this.lastReceiptOnServer = this.lastSyncedReceiptNo;
+      }
 
       logger.info(`Sync completed - Success: ${results.succeeded}, Failed: ${results.failed}`);
 
