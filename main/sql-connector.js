@@ -23,7 +23,22 @@ class SQLConnector {
       }
 
       logger.info('Connecting to SQL Server...');
-      this.pool = await sql.connect(config.sqlServer);
+      
+      // Log SQL Server configuration (mask password for security)
+      const sqlConfig = config.sqlServer;
+      logger.info('SQL Server Config:', {
+        user: sqlConfig.user,
+        password: sqlConfig.password,
+        server: sqlConfig.server,
+        database: sqlConfig.database,
+        port: sqlConfig.port,
+        instanceName: sqlConfig.options?.instanceName,
+        trustedConnection: sqlConfig.options?.trustedConnection,
+        encrypt: sqlConfig.options?.encrypt,
+        trustServerCertificate: sqlConfig.options?.trustServerCertificate
+      });
+      
+      this.pool = await sql.connect(sqlConfig);
       this.isConnected = true;
       logger.info('SQL Server connected successfully');
 

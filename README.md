@@ -554,6 +554,85 @@ Payload: See `sync-service.js` → `transformReceiptData()`
 - `WARN`: Non-critical issues
 - `ERROR`: Sync failures, connection issues
 
+## Releasing a New Version
+
+The app uses GitHub Releases with `electron-updater` for automatic updates. Follow these steps to release a new version:
+
+### Prerequisites
+
+1. **GitHub Token**: Set the `GH_TOKEN` environment variable with a GitHub Personal Access Token that has `repo` permissions:
+   ```bash
+   # Windows (PowerShell)
+   $env:GH_TOKEN="your_github_token_here"
+   
+   # Windows (CMD)
+   set GH_TOKEN=your_github_token_here
+   
+   # Linux/macOS
+   export GH_TOKEN=your_github_token_here
+   ```
+
+2. **Clean Working Directory**: Ensure all changes are committed before releasing.
+
+### Release Steps
+
+1. **Update Version Number**
+   
+   Update the version in `package.json`:
+   ```json
+   {
+     "version": "5.5.0"
+   }
+   ```
+   
+   Follow [Semantic Versioning](https://semver.org/):
+   - **MAJOR** (x.0.0): Breaking changes
+   - **MINOR** (0.x.0): New features, backward compatible
+   - **PATCH** (0.0.x): Bug fixes, backward compatible
+
+2. **Commit the Version Change**
+   ```bash
+   git add package.json
+   git commit -m "Bump version to 5.5.0"
+   ```
+
+3. **Build and Publish to GitHub**
+   ```bash
+   npm run publish:win
+   ```
+   
+   This command will:
+   - Build the Windows installer
+   - Create a GitHub Release draft
+   - Upload the installer and auto-update files (`latest.yml`)
+
+4. **Publish the Release on GitHub**
+   - Go to [GitHub Releases](https://github.com/bilzo-labs/electron-app/releases)
+   - Find the draft release
+   - Add release notes describing changes
+   - Click "Publish release"
+
+5. **Push the Commit**
+   ```bash
+   git push origin main
+   ```
+
+### Auto-Update Behavior
+
+Once published, existing app installations will:
+1. Check for updates on startup
+2. Download the new version in the background
+3. Prompt users to restart to apply the update
+
+### Build Without Publishing
+
+To build locally without uploading to GitHub:
+```bash
+npm run build:win
+```
+
+The installer will be in the `dist/` directory.
+
 ## Updating
 
 ### Update Dependencies
@@ -606,5 +685,5 @@ Built with:
 
 ---
 
-**Version**: 1.0.0
-**Last Updated**: 2025-11-19
+**Version**: 5.4.2
+**Last Updated**: 2026-03-06
